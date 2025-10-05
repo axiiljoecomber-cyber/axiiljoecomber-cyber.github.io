@@ -11,17 +11,18 @@
       --start-size: 320px;
     }
     html,body {
-      height: 100%;
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: var(--bg);
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 16px;
-    }
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; /* important so header spans full width */
+  justify-content: flex-start;
+  padding: 0; /* optional, better header alignment */
+}
+
     .card {
       width: 100%;
       max-width: 900px;
@@ -120,12 +121,21 @@
   </style>
 </head>
 <body>
-  <div id="header-container"></div>
+  <div id="header-container" style="width:100%;"></div>
 <script>
   fetch('/header.html')
-    .then(response => response.text())
-    .then(data => {
-      document.getElementById('header-container').innerHTML = data;
+    .then(res => res.text())
+    .then(html => {
+      document.getElementById('header-container').innerHTML = html;
+      const header = document.querySelector('#header-container header');
+      if (header) {
+        header.style.width = "100%";
+        header.style.boxSizing = "border-box";
+        header.style.padding = "0.5rem 2rem";
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "center";
+      }
     });
 </script>
 
