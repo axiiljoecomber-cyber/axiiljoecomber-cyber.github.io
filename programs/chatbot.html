@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>COSO AXIIL A.I.</title>
+    <title>Axiil Inc. COSO A.I.</title>
     <style>
         body {
             background-color: #ffffff;
@@ -60,6 +60,23 @@
     </style>
 </head>
 <body>
+    <div id="header-container" style="width:100%;"></div>
+<script>
+  fetch('/header.html')
+    .then(res => res.text())
+    .then(html => {
+      document.getElementById('header-container').innerHTML = html;
+      const header = document.querySelector('#header-container header');
+      if (header) {
+        header.style.width = "100%";
+        header.style.boxSizing = "border-box";
+        header.style.padding = "0.5rem 2rem";
+        header.style.display = "flex";
+        header.style.justifyContent = "space-between";
+        header.style.alignItems = "center";
+      }
+    });
+</script>
     <div class="chat-container">
         <h1>COSO AXIIL A.I.</h1>
         <div class="response-box" id="responseArea">
