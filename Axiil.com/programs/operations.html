@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Operations Overview 3.2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#0f1115; --card:#151922; --muted:#9aa4b2; --fg:#e6ebf0;
+    --btn:#1b2130; --btn-h:#22293a; --pill:#1c2330;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--fg)}
+  header{padding:16px 20px; border-bottom:1px solid #1e2431; display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:.3px}
+  header .dot{width:8px; height:8px; border-radius:50%; background:#39ff14; box-shadow:0 0 8px #39ff14}
+  header .volume-container{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted);}
+  header .volume-container input[type="range"]{width:80px; height:4px; background:#22293a; border-radius:4px; cursor:pointer;}
+  header .datetime{font-size:12px; color:var(--muted); margin-left:8px; white-space:nowrap;}
+  main{max-width:1100px; margin:0 auto; padding:20px; display:grid; grid-template-columns:1.2fr .8fr; gap:16px}
+  section{background:var(--card); border:1px solid #1e2431; border-radius:14px; padding:16px}
+  h2{margin:0 0 12px 0; font-size:14px; color:#cdd6e3}
+  textarea,input,button{font-size:14px; width:100%; background:#0d111b; color:var(--fg); border:1px solid #202738; border-radius:10px; padding:10px 12px}
+  textarea{min-height:80px; resize:vertical}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .row > *{flex:1}
+  .btn{background:#1b2130; border:1px solid #2a3347; color:var(--fg); padding:6px 10px; border-radius:8px; cursor:pointer; font-size:12px; white-space:nowrap;}
+  .btn.small{padding:4px 6px; font-size:11px;}
+  .btn:hover{background:#22293a}
+  .btn.accent{border-color:#3a93ad; background:#123040}
+  .btn.warn{border-color:#6b2a3a}
+  .grid{display:grid; gap:10px}
+  .kb-item{position:relative; border:1px solid #273047; background:#121827; border-radius:12px; padding:12px; word-break:break-word; overflow-wrap:break-word;}
+  .kb-item.completed{background:rgba(57,255,20,0.1);}
+  .completed-label{position:absolute; top:8px; right:8px; background:rgba(57,255,20,0.2); color:#39ff14; font-size:12px; font-weight:600; padding:2px 6px; border-radius:8px; display:flex; align-items:center; gap:4px;}
+  .muted{color:#9aa4b2; font-size:12px; word-break:break-word; overflow-wrap:break-word;}
+  .pill{display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:999px; font-size:12px; font-weight:500; cursor:default; user-select:none;}
+  .pill .remove{margin-left:4px; font-weight:bold; cursor:pointer;}
+  .pill.orange{background:#ff7f50; color:#fff;}
+  .pill.green{background:#39ff14; color:#333;}
+  .pill.red{background:#ff4444; color:#fff;}
+  .right-btn{display:flex; justify-content:flex-end; gap:6px; margin-top:10px;}
+  #taskList::-webkit-scrollbar { width:10px; }
+  #taskList::-webkit-scrollbar-track { background:#1b1f28; border-radius:8px; }
+  #taskList::-webkit-scrollbar-thumb { background:#555; border-radius:8px; }
+  #taskList::-webkit-scrollbar-thumb:hover { background:#777; }
+  .tag-buttons{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
+  .tag-buttons .btn{flex:none; padding:4px 8px; font-size:12px; width:auto; min-width:0;}
+</style>
+</head>
+<body>
+<header>
+  <div class="dot"></div>
+  <h1>Operations Overview 3.1</h1>
+  <span class="pill">Tasks: <span id="task-count">0</span></span>
+  <div class="volume-container">
+    Volume: <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.2">
+  </div>
+  <div class="datetime" id="currentDateTime">Loading...</div>
+</header>
+
+<main>
+  <section>
+    <h2>Add Task</h2>
+    <textarea id="taskText" placeholder="Enter task description…"></textarea>
+    <div class="row">
+      <input id="taskTitle" placeholder="Optional title" />
+      <input id="taskTags" placeholder="Tags (comma-separated)" />
+    </div>
+    <div class="tag-buttons" id="createTagButtons"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn accent" id="addTaskBtn">Add Task</button>
+      <button class="btn" id="clearTaskInput">Clear</button>
+    </div>
+    <hr style="border:none;border-top:1px solid #1e2431; margin:16px 0">
+    <h2>Log URL</h2>
+    <div class="row">
+      <input id="taskUrl" placeholder="Enter URL" />
+      <button class="btn accent" id="logUrlBtn">Add URL</button>
+    </div>
+    <hr style="border:none;border-top:1px solid #1e2431; margin:16px 0">
+    <h2>Search Tasks</h2>
+    <div class="row">
+      <input id="searchQuery" placeholder="Search tags… (space-separated)" />
+      <button class="btn accent" id="searchBtn">Search</button>
+    </div>
+    <div class="tag-buttons" id="searchTagButtons"></div>
+  </section>
+
+  <section>
+    <h2>Tasks</h2>
+    <div id="taskList" class="grid" style="max-height:65vh; overflow:auto;"></div>
+    <div class="right-btn">
+      <button class="btn accent" id="showAllBtn">Show All</button>
+      <button class="btn accent" id="copyAllBtn">Copy All</button>
+    </div>
+  </section>
+</main>
+
+<script>
+let tasks=[];
+let currentList=[];
+let volume=0.2;
+let activeSearchTerms=[];
+
+const els={
+  taskText:document.getElementById('taskText'),
+  taskTitle:document.getElementById('taskTitle'),
+  taskTags:document.getElementById('taskTags'),
+  addTaskBtn:document.getElementById('addTaskBtn'),
+  clearTaskInput:document.getElementById('clearTaskInput'),
+  taskList:document.getElementById('taskList'),
+  taskCount:document.getElementById('task-count'),
+  taskUrl:document.getElementById('taskUrl'),
+  logUrlBtn:document.getElementById('logUrlBtn'),
+  searchQuery:document.getElementById('searchQuery'),
+  searchBtn:document.getElementById('searchBtn'),
+  showAllBtn:document.getElementById('showAllBtn'),
+  copyAllBtn:document.getElementById('copyAllBtn'),
+  createTagButtons:document.getElementById('createTagButtons'),
+  searchTagButtons:document.getElementById('searchTagButtons'),
+  volumeSlider:document.getElementById('volumeSlider'),
+  currentDateTime:document.getElementById('currentDateTime')
+};
+
+els.volumeSlider.addEventListener('input',()=>{volume=parseFloat(els.volumeSlider.value);});
+
+function updateDateTime(){
+  const now=new Date();
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dayName=days[now.getDay()];
+  const dateStr=now.toLocaleDateString();
+  const timeStr=now.toLocaleTimeString();
+  els.currentDateTime.textContent=`${dateStr} / ${dayName} / ${timeStr}`;
+}
+setInterval(updateDateTime,1000);
+updateDateTime();
+
+function saveTasks(){ localStorage.setItem('tasks',JSON.stringify(tasks)); }
+function loadTasks(){ const data=localStorage.getItem('tasks'); if(data) tasks=JSON.parse(data); }
+function escapeHTML(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// 🎯 Single Master Quick Tag List
+const tagList=[
+  'Grocery','Urgent','Work','Personal','Call','Email','Daily',
+  'Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday',
+  'Wants List','Needs List','Repairs'
+];
+
+function playSound(freq=440,type='sine',duration=0.15,vol=volume){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const osc=ctx.createOscillator();
+  const gain=ctx.createGain();
+  osc.type=type; osc.frequency.value=freq;
+  osc.connect(gain); gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(vol,ctx.currentTime);
+  osc.start(); osc.stop(ctx.currentTime+duration);
+}
+function soundAddTask(){ playSound(400,'triangle',0.1); setTimeout(()=>playSound(500,'triangle',0.1),80);}
+function soundCompleteTask(){ playSound(700,'sine',0.08); setTimeout(()=>playSound(500,'sine',0.08),60); setTimeout(()=>playSound(400,'sine',0.08),120);}
+function soundReassign(){ playSound(500,'square',0.08); setTimeout(()=>playSound(600,'square',0.08),80);}
+function soundDelete(){ playSound(300,'sawtooth',0.15); setTimeout(()=>playSound(150,'sawtooth',0.12),50);}
+
+function rerender(){
+  if(activeSearchTerms.length>0){
+    searchTasks();
+  } else {
+    renderTasks();
+  }
+}
+
+function renderTasks(list=tasks){
+  els.taskList.innerHTML='';
+  const sorted=[...list].sort((a,b)=>{
+    if(a.completed && !b.completed) return 1;
+    if(!a.completed && b.completed) return -1;
+    const aUrgent=(a.tags||[]).some(t=>t.toLowerCase()==='urgent');
+    const bUrgent=(b.tags||[]).some(t=>t.toLowerCase()==='urgent');
+    return (bUrgent - aUrgent);
+  });
+  currentList=sorted;
+  sorted.forEach(t=>{
+    const div=document.createElement('div');
+    div.className='kb-item'+(t.completed?' completed':'');
+    const tagsHTML=(t.tags||[]).map(tag=>{
+      const colorClass=tag.toLowerCase()==='urgent'?'red':'orange';
+      return `<span class="pill ${colorClass}">#${escapeHTML(tag)}<span class="remove" data-taskid="${t.id}" data-tag="${escapeHTML(tag)}">×</span></span>`;
+    }).join(' ');
+    div.innerHTML=`
+      ${t.completed?`<div class="completed-label">✔ Completed</div>`:''}
+      <div style="font-weight:600">${escapeHTML(t.title||'Untitled Task')}</div>
+      <div class="muted" style="margin-top:4px">${tagsHTML}</div>
+      <div class="muted" style="margin-top:6px">${escapeHTML(t.text||t.url||'')}</div>
+      <div class="row" style="margin-top:8px; gap:4px">
+        ${t.completed?`<button class="btn accent small reassignBtn">Re-Assign</button>`:`<button class="btn small completeBtn">Complete</button>`}
+        <button class="btn small editBtn">Edit</button>
+        <button class="btn warn small deleteBtn">Delete</button>
+        <button class="btn red small urgentBtn">Urgent</button>
+      </div>
+    `;
+    if(!t.completed) div.querySelector('.completeBtn').onclick=()=>{ t.completed=true; saveTasks(); rerender(); soundCompleteTask(); };
+    if(t.completed) div.querySelector('.reassignBtn').onclick=()=>{ t.completed=false; saveTasks(); rerender(); soundReassign(); };
+    div.querySelector('.deleteBtn').onclick=()=>{ tasks=tasks.filter(x=>x.id!==t.id); saveTasks(); rerender(); soundDelete(); };
+    div.querySelector('.editBtn').onclick=()=>{ const newText=prompt('Edit task text:', t.text||t.url||''); if(newText!==null){ t.text=newText; saveTasks(); rerender(); } };
+    div.querySelector('.urgentBtn').onclick=()=>{ if(!(t.tags||[]).some(tag=>tag.toLowerCase()==='urgent')){ t.tags.push('Urgent'); saveTasks(); rerender(); } };
+    div.querySelectorAll('.remove').forEach(el=>{
+      el.onclick=()=>{ t.tags=t.tags.filter(tag=>tag!==el.dataset.tag); saveTasks(); rerender(); };
+    });
+    els.taskList.appendChild(div);
+  });
+  els.taskCount.textContent=tasks.length;
+}
+
+// Init Quick Tag Buttons
+function initTagButtons(){
+  tagList.forEach(tag=>{
+    const btnCreate=document.createElement('button');
+    btnCreate.className='btn'; btnCreate.textContent=tag;
+    btnCreate.onclick=()=>{
+      const currentTags=els.taskTags.value.split(',').map(t=>t.trim()).filter(Boolean);
+      if(!currentTags.includes(tag)){ currentTags.push(tag); els.taskTags.value=currentTags.join(', '); }
+    };
+    els.createTagButtons.appendChild(btnCreate);
+
+    const btnSearch=document.createElement('button');
+    btnSearch.className='btn'; btnSearch.textContent=tag;
+    btnSearch.onclick=()=>{
+      const currentSearch=els.searchQuery.value.split(/\s+/).map(s=>s.trim()).filter(Boolean);
+      if(!currentSearch.includes(tag.toLowerCase())){ currentSearch.push(tag.toLowerCase()); els.searchQuery.value=currentSearch.join(' '); searchTasks(); }
+    };
+    els.searchTagButtons.appendChild(btnSearch);
+  });
+}
+
+// Events
+els.addTaskBtn.onclick=()=>{
+  const text=els.taskText.value.trim(); if(!text) return;
+  const task={id:Date.now(), text, title:els.taskTitle.value.trim(), tags:els.taskTags.value.split(',').map(t=>t.trim()).filter(Boolean), completed:false};
+  tasks.push(task); saveTasks(); rerender();
+  els.taskText.value=''; els.taskTitle.value=''; els.taskTags.value=''; soundAddTask();
+};
+els.clearTaskInput.onclick=()=>{ els.taskText.value=''; els.taskTitle.value=''; els.taskTags.value=''; };
+els.logUrlBtn.onclick=()=>{ const url=els.taskUrl.value.trim(); if(!url) return; tasks.push({id:Date.now(), url, title:'', tags:[], completed:false}); saveTasks(); rerender(); els.taskUrl.value=''; soundAddTask(); };
+
+function searchTasks(){
+  const query=els.searchQuery.value.trim().toLowerCase();
+  if(!query){ activeSearchTerms=[]; renderTasks(); return; }
+  const terms=query.split(/\s+/).filter(Boolean);
+  activeSearchTerms=terms;
+
+  // ✅ More forgiving matching
+  const filtered=tasks.filter(t=>
+    terms.every(term=>
+      (t.tags||[]).some(tag=>
+        tag.trim().toLowerCase().includes(term)  // partial + case-insensitive
+      )
+    )
+  );
+  renderTasks(filtered);
+}
+els.searchBtn.onclick=searchTasks;
+els.searchQuery.addEventListener('keyup',e=>{if(e.key==='Enter') searchTasks();});
+els.showAllBtn.onclick=()=>{ els.searchQuery.value=''; activeSearchTerms=[]; renderTasks(); };
+els.copyAllBtn.onclick=()=>{
+  if(!currentList.length) return;
+  const textToCopy=currentList.map(t=>{
+    const title=t.title?.trim()?t.title:'';
+    const tags=t.tags.length?' ['+t.tags.join(',')+']':'';
+    const body=t.text||t.url||'';
+    const status=t.completed?' (Completed)':'';
+    return title+status+tags+(body?': '+body:'');
+  }).join('\n');
+  navigator.clipboard.writeText(textToCopy).then(()=>{ alert('Tasks copied to clipboard!'); }).catch(err=>{ console.error('Copy failed', err); });
+};
+
+loadTasks(); renderTasks(); initTagButtons();
+</script>
+
+</body>
+</html>

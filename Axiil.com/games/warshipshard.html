@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>World Map with Ships & Missiles</title>
+<style>
+  body { margin:0; background:#0b1220; display:flex; flex-direction:column; align-items:center; font-family:system-ui,sans-serif; color:white; }
+  #map { width:1100px; height:700px; background:#101a33; border-radius:6px; }
+  .country { fill:#222a3d; stroke:#555; stroke-width:0.5; cursor:pointer; }
+  .health-bar { fill:green; }
+  .enemy-health { fill:red; }
+  .dotted-line { stroke:white; stroke-width:1; stroke-dasharray:4 4; }
+  .red-line { stroke:red; stroke-width:1; stroke-dasharray:4 4; }
+  #stats { display:flex; justify-content:space-between; width:1100px; margin-top:5px; font-size:14px; }
+  #autoFireBtn { cursor:pointer; padding:2px 6px; background:#444; border-radius:4px; }
+  #gameMessage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    font-weight: bold;
+    color: yellow;
+    text-shadow: 2px 2px 6px black;
+    pointer-events: none;
+    text-align: center;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+</head>
+<body>
+<svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+<div id="stats">
+  <!-- update these initial text values to reflect the new start counts -->
+  <div id="deployPool">Friendly deploy pool: 10 | Enemy deploy pool: 30</div>
+  <div id="autoFireBtn">Auto Fire: OFF</div>
+  <div id="troopCount">Friendly: 10 | Enemy: 30</div>
+</div>
+<div id="gameMessage"></div>
+
+<script>
+(async function(){
+  const svg = d3.select("#map");
+  const countriesGroup = svg.append("g").attr("class","countries");
+  const shipsGroup = svg.append("g").attr("class","ships");
+  const missilesGroup = svg.append("g").attr("class","missiles");
+  const explosionsGroup = svg.append("g").attr("class","explosions");
+  const linesGroup = svg.append("g").attr("class","lines");
+  const overlayGroup = svg.append("g").attr("class","overlays");
+
+  const MAP_WIDTH = 1100, MAP_HEIGHT = 700, EDGE_PADDING = 10;
+  const SHIP_SPEED = 0.15;
+
+  // ---------- configure starting counts here ----------
+  const START_FRIENDLY = 10; // how many friendly ships to spawn at start
+  const START_ENEMY   = 30; // how many enemy ships to spawn at start
+
+  // deploy pools (these are decremented by deployShip as ships are placed)
+  let friendlyDeploy = START_FRIENDLY;
+  let enemyDeploy   = START_ENEMY;
+
+  let autoFire = false;
+  // ---------------------------------------------------
+
+  const updateDeployDisplay = () => {
+    document.getElementById("deployPool").innerText = `Friendly deploy pool: ${friendlyDeploy} | Enemy deploy pool: ${enemyDeploy}`;
+  };
+  const updateTroopCount = () => {
+    const friendly = ships.filter(s=>s.friendly).length;
+    const enemy = ships.filter(s=>!s.friendly).length;
+    document.getElementById("troopCount").innerText = `Friendly: ${friendly} | Enemy: ${enemy}`;
+  };
+
+  const topoURL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+  const worldTopo = await d3.json(topoURL);
+  const world = topojson.feature(worldTopo, worldTopo.objects.countries);
+  const countries = world.features.filter(c => c.properties.name !== "Antarctica");
+  const projection = d3.geoNaturalEarth1().fitSize([MAP_WIDTH,MAP_HEIGHT], world);
+  const path = d3.geoPath(projection);
+
+  countriesGroup.selectAll("path")
+    .data(countries)
+    .join("path")
+    .attr("class","country")
+    .attr("d", path)
+    .attr("fill", d => {
+      if(["Russia","Greenland"].includes(d.properties.name)) return "darkred";
+      if(["United States of America","Brazil","Argentina","Chile","Colombia","Peru","Mexico"].includes(d.properties.name)) return "darkgreen";
+      return "#222a3d";
+    });
+
+  overlayGroup.selectAll("line.enemy-zone")
+    .data(d3.range(0, MAP_WIDTH, 20))
+    .enter().append("line")
+    .attr("class","enemy-zone")
+    .attr("x1", d => d)
+    .attr("y1", 0)
+    .attr("x2", d => d+100)
+    .attr("y2", 100)
+    .attr("stroke","red")
+    .attr("stroke-width",1)
+    .attr("stroke-dasharray","4 4");
+
+  svg.append("rect")
+    .attr("x",EDGE_PADDING).attr("y",EDGE_PADDING)
+    .attr("width",MAP_WIDTH-2*EDGE_PADDING)
+    .attr("height",MAP_HEIGHT-2*EDGE_PADDING)
+    .attr("fill","none").attr("stroke","#888").attr("stroke-dasharray","4 4");
+
+  const shipURL = "https://png.pngtree.com/png-clipart/20240817/original/pngtree-warship-3d-model-top-view-png-image_15791227.png";
+  let ships = [];
+  let missiles = [];
+  const MAX_MISSILE_RANGE = 200;
+
+  let moveLine = linesGroup.append("line").attr("class","dotted-line").attr("visibility","hidden");
+  let fireLine = linesGroup.append("line").attr("class","red-line").attr("visibility","hidden");
+  let isDragging=false, isTargeting=false, missileTarget=null;
+  let selectedShip = null;
+
+  function fireMissile(owner,tx,ty){
+    const dx = tx - owner.x;
+    const dy = ty - owner.y;
+    const angle = Math.atan2(dy, dx) + (Math.random()*0.2-0.1);
+    const dist = Math.hypot(dx,dy);
+    const maxDist = Math.min(dist, MAX_MISSILE_RANGE);
+    missiles.push({x:owner.x, y:owner.y, angle, speed:2, traveled:0, maxDist, owner});
+  }
+
+  function spawnExplosion(x,y){
+    const e=explosionsGroup.append("image")
+      .attr("href","https://static.wixstatic.com/media/ca16fe_cd312dce407b468cbd4e9fa4410d54cb~mv2.gif")
+      .attr("width",50).attr("height",50).attr("x",x-25).attr("y",y-25);
+    setTimeout(()=>e.remove(),800);
+  }
+
+  function deployShip(x,y,friendly=true,ignoreNearby=false){
+    if(document.getElementById("gameMessage").innerText) return;
+    if(x<EDGE_PADDING || x>MAP_WIDTH-EDGE_PADDING || y<EDGE_PADDING || y>MAP_HEIGHT-EDGE_PADDING) return;
+    if(countries.some(c=>d3.geoContains(c,projection.invert([x,y])))) return;
+    if(friendly && friendlyDeploy<=0) return;
+    if(!friendly && enemyDeploy<=0) return;
+    if(!ignoreNearby){
+      const nearby = ships.some(s=>s.friendly===friendly && Math.hypot(s.x-x,s.y-y)<=200);
+      if(!nearby && ships.length>0) return;
+    }
+    const shipObj = {x,y,rotation:0,target:null,health:100,friendly,lastFire:0};
+    shipObj.elem = shipsGroup.append("image")
+      .attr("href",shipURL)
+      .attr("width",40)
+      .attr("height",40)
+      .attr("x",x-20)
+      .attr("y",y-20)
+      .attr("transform",`rotate(0,${x},${y})`);
+    shipObj.healthBar = shipsGroup.append("rect")
+      .attr("x",x-20)
+      .attr("y",y-28)
+      .attr("width",40)
+      .attr("height",4)
+      .attr("class",friendly?"health-bar":"enemy-health");
+    ships.push(shipObj);
+    if(friendly) friendlyDeploy--; else enemyDeploy--;
+    updateDeployDisplay(); updateTroopCount();
+  }
+
+  // spawn START_FRIENDLY friendly and START_ENEMY enemy ships at start
+  for(let i=0;i<START_FRIENDLY;i++) deployShip(200 + i*30, 350, true, true);
+  for(let i=0;i<START_ENEMY;i++){
+    const ex = 900 + Math.random()*80;
+    const ey = 250 + Math.random()*150;
+    deployShip(ex, ey, false, true);
+  }
+
+  svg.on("mousedown", event=>{
+    const [mx,my] = d3.pointer(event);
+    if(event.button===0){
+      selectedShip = ships.find(s=>s.friendly && Math.hypot(s.x-mx,s.y-my)<25) || null;
+      if(selectedShip) isDragging=true;
+    } else if(event.button===2){
+      selectedShip = ships.find(s=>s.friendly && Math.hypot(s.x-mx,s.y-my)<25) || null;
+      if(selectedShip){
+        isTargeting=true;
+        missileTarget=[mx,my];
+        fireLine.attr("x1",selectedShip.x).attr("y1",selectedShip.y).attr("x2",mx).attr("y2",my).attr("visibility","visible");
+        event.preventDefault();
+      }
+    }
+  });
+
+  svg.on("mousemove", event=>{
+    const [mx,my] = d3.pointer(event);
+    if(isDragging && selectedShip){
+      selectedShip.rotation = Math.atan2(my-selectedShip.y,mx-selectedShip.x)*180/Math.PI-90;
+      moveLine.attr("x1",selectedShip.x).attr("y1",selectedShip.y).attr("x2",mx).attr("y2",my).attr("visibility","visible");
+    }
+    if(isTargeting && selectedShip){
+      fireLine.attr("x2",mx).attr("y2",my);
+      missileTarget=[mx,my];
+    }
+  });
+
+  svg.on("mouseup", event=>{
+    const [mx,my] = d3.pointer(event);
+    if(isDragging && selectedShip){ selectedShip.target=[mx,my]; isDragging=false; moveLine.attr("visibility","hidden"); }
+    if(isTargeting && selectedShip){ fireMissile(selectedShip,mx,my); isTargeting=false; fireLine.attr("visibility","hidden"); }
+  });
+  svg.on("contextmenu", e=>e.preventDefault());
+
+  function updateShips(){
+    for(const s of ships){
+      s.elem.attr("x",s.x-20).attr("y",s.y-20).attr("transform",`rotate(${s.rotation},${s.x},${s.y})`);
+      s.healthBar.attr("x",s.x-20).attr("y",s.y-28).attr("width",40*(s.health/100));
+      s.x = Math.max(EDGE_PADDING, Math.min(MAP_WIDTH-EDGE_PADDING, s.x));
+      s.y = Math.max(EDGE_PADDING, Math.min(MAP_HEIGHT-EDGE_PADDING, s.y));
+    }
+  }
+
+  function bounceOffCountry(obj,prevX,prevY){
+    const geo = projection.invert([obj.x,obj.y]);
+    if(geo && countries.some(c=>d3.geoContains(c,geo))){
+      obj.x = prevX; obj.y = prevY;
+    }
+  }
+
+  function updateEnemies(){
+    for(const s of ships.filter(s=>!s.friendly)){
+      let prevX = s.x, prevY = s.y;
+      if(Math.random()<0.01){
+        const friendlyShips = ships.filter(f=>f.friendly);
+        if(friendlyShips.length>0){
+          const targetShip = friendlyShips[Math.floor(Math.random()*friendlyShips.length)];
+          s.target = [targetShip.x, targetShip.y];
+          s.wanderTime = 50 + Math.random()*50;
+        }
+      }
+      if(!s.target || !s.wanderTime || s.wanderTime<=0){
+        const dx = (Math.random()*600)-300;
+        const dy = (Math.random()*400)-200;
+        s.target = [s.x + dx, s.y + dy];
+        s.wanderTime = 200 + Math.random()*200;
+      }
+      s.wanderTime--;
+      const dx = s.target[0]-s.x, dy = s.target[1]-s.y;
+      const dist = Math.hypot(dx,dy);
+      if(dist<1) s.target=null;
+      else { s.x += dx/dist*SHIP_SPEED; s.y += dy/dist*SHIP_SPEED; s.rotation=Math.atan2(dy,dx)*180/Math.PI-90; }
+      bounceOffCountry(s,prevX,prevY);
+      for(const f of ships.filter(s=>s.friendly)){
+        if(Math.hypot(f.x-s.x,f.y-s.y)<=MAX_MISSILE_RANGE && Math.random()<0.03){
+          fireMissile(s,f.x,f.y);
+        }
+      }
+    }
+    if(enemyDeploy>0 && Math.random()<0.2){
+      const possible = ships.filter(s=>!s.friendly);
+      if(possible.length>0){
+        const base = possible[Math.floor(Math.random()*possible.length)];
+        const angle = Math.random()*Math.PI*2;
+        const r = Math.random()*200;
+        deployShip(base.x + Math.cos(angle)*r, base.y + Math.sin(angle)*r, false);
+      }
+    }
+  }
+
+  function updateMissiles(){
+    missiles.forEach((m,i)=>{
+      const dx = Math.cos(m.angle)*m.speed;
+      const dy = Math.sin(m.angle)*m.speed;
+      m.x += dx; m.y += dy; m.traveled += Math.hypot(dx,dy);
+      let exploded = false;
+      if(m.traveled >= m.maxDist) exploded=true;
+      if(m.x<EDGE_PADDING || m.x>MAP_WIDTH-EDGE_PADDING || m.y<EDGE_PADDING || m.y>MAP_HEIGHT-EDGE_PADDING) exploded=true;
+      const targets = ships.filter(s=>s.friendly!==m.owner.friendly && Math.hypot(s.x-m.x,s.y-m.y)<25);
+      targets.forEach(t=>{
+        t.health = Math.max(0,t.health - 8);
+        exploded=true;
+        if(t.health<=0){
+          if(t.friendly) enemyDeploy++;  // friendly dies → enemy gains 1 deploy
+          else friendlyDeploy++;         // enemy dies → friendly gains 1 deploy
+          t.elem.remove();
+          t.healthBar.remove();
+          ships.splice(ships.indexOf(t),1);
+          updateDeployDisplay();
+          updateTroopCount();
+          checkGameOver();
+        }
+      });
+      if(exploded){ spawnExplosion(m.x,m.y); missiles.splice(i,1); }
+    });
+    const sel = missilesGroup.selectAll("line").data(missiles);
+    sel.join(
+      enter=>enter.append("line").attr("stroke","yellow").attr("stroke-width",2),
+      update=>update,
+      exit=>exit.remove()
+    ).attr("x1",d=>d.x).attr("y1",d=>d.y)
+     .attr("x2",d=>d.x+Math.cos(d.angle)*5)
+     .attr("y2",d=>d.y+Math.sin(d.angle)*5);
+  }
+
+  function checkGameOver(){
+    const friendlyAlive = ships.filter(s=>s.friendly).length;
+    const enemyAlive = ships.filter(s=>!s.friendly).length;
+    if(friendlyAlive <= 0) document.getElementById("gameMessage").innerText = "You Lost!";
+    if(enemyAlive <= 0) document.getElementById("gameMessage").innerText = "You Won!";
+  }
+
+  function applyHealing(){
+    const now = Date.now();
+    if(!window.lastHealTime) window.lastHealTime = now;
+    if(now - window.lastHealTime < 20000) return;
+    window.lastHealTime = now;
+
+    for(const s of ships){
+      if(!s.friendly){
+        const enemyZones = countries.filter(c => ["Australia"].includes(c.properties.name));
+        let inZone = enemyZones.some(c=>{
+          const [cx,cy] = projection(d3.geoCentroid(c));
+          return Math.hypot(cx-s.x,cy-s.y)<=200;
+        });
+        if(inZone) s.health = Math.min(100, s.health+5);
+      }
+      if(s.friendly){
+        const allyZones = countries.filter(c => ["United States of America","Brazil","Argentina","Chile","Colombia","Peru","Mexico"].includes(c.properties.name));
+        const inZone = allyZones.some(c=>{
+          const [cx,cy] = projection(d3.geoCentroid(c));
+          return Math.hypot(cx-s.x,cy-s.y)<=200;
+        });
+        if(inZone) s.health = Math.min(100, s.health+10);
+      }
+    }
+  }
+
+  function gameLoop(){
+    const now = Date.now();
+    for(const s of ships){
+      if(s.target){
+        const dx = s.target[0]-s.x, dy = s.target[1]-s.y;
+        const dist=Math.hypot(dx,dy);
+        if(dist<SHIP_SPEED) s.x=s.target[0], s.y=s.target[1], s.target=null;
+        else { s.x+=dx/dist*SHIP_SPEED; s.y+=dy/dist*SHIP_SPEED; s.rotation=Math.atan2(dy,dx)*180/Math.PI-90; }
+        bounceOffCountry(s,s.x-dx/dist*SHIP_SPEED,s.y-dy/dist*SHIP_SPEED);
+      }
+      if(autoFire && s.friendly && now - s.lastFire > 3000){
+        const targets = ships.filter(e=>!e.friendly && Math.hypot(e.x-s.x,e.y-s.y)<=MAX_MISSILE_RANGE);
+        if(targets.length>0){
+          const target = targets[Math.floor(Math.random()*targets.length)];
+          const offsetX = (Math.random()*20-10);
+          const offsetY = (Math.random()*20-10);
+          fireMissile(s,target.x+offsetX,target.y+offsetY);
+          s.lastFire = now;
+        }
+      }
+    }
+    updateEnemies(); updateShips(); updateMissiles(); applyHealing(); updateTroopCount();
+    checkGameOver();
+    requestAnimationFrame(gameLoop);
+  }
+
+  requestAnimationFrame(gameLoop);
+
+  svg.on("dblclick", event=>{
+    const [mx,my] = d3.pointer(event);
+    deployShip(mx,my,true);
+  });
+
+  document.getElementById("autoFireBtn").addEventListener("click", ()=>{
+    autoFire = !autoFire;
+    document.getElementById("autoFireBtn").innerText = `Auto Fire: ${autoFire?"ON":"OFF"}`;
+  });
+
+  // ensure initial deploy display is correct (in case DOM text was different)
+  updateDeployDisplay();
+  updateTroopCount();
+
+})();
+</script>
+</body>
+</html>

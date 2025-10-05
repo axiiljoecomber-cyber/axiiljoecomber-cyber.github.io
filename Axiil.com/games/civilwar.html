@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Civil War 1.5</title>
+<style>
+  body { 
+    margin:0; 
+    background:#0b1220; 
+    color:#e8eefc; 
+    font-family:system-ui,sans-serif; 
+    display:flex; 
+    justify-content:center; 
+    align-items:flex-start; 
+  }
+  .game-container { 
+    display:flex; 
+    flex-direction:row; 
+    margin-top:12px; 
+    background:#101a33; 
+    border-radius:6px; 
+    box-shadow:0 0 12px rgba(0,0,0,0.6); 
+    padding:12px; 
+    gap:12px;
+  }
+  #map { 
+    width:1100px; 
+    height:700px; 
+    display:block; 
+    flex-shrink:0;
+    background:#101a33;
+    border-radius:6px;
+  }
+  .right-panel {
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    flex-shrink:0;
+    width:420px;
+  }
+  .ui { 
+    font-size:14px; 
+    line-height:1.4; 
+    font-weight:bold; 
+    font-family:monospace; 
+    user-select:none; 
+    text-align:right; 
+    background:#101a33;
+    border-radius:6px;
+    padding:8px;
+    padding-right:60px; /* 🔹 shift text away from right edge */
+  }
+  .ui #gameTitle { 
+    color:gold; 
+    font-size:18px; 
+    margin-bottom:12px; 
+    text-align:right; 
+  }
+  .ui #enemyCount, .ui #enemyStatesUI { color:#ff4c4c; }
+
+  .charts-wrapper { 
+    display:flex; 
+    flex-direction:column; 
+    gap:12px; 
+    flex-wrap:nowrap;
+  }
+  .chart-container { 
+    width:100%; 
+    height:200px; 
+    background:#101a33; 
+    padding:8px; 
+    box-sizing:border-box; 
+    border-radius:6px; 
+  }
+  canvas { display:block; width:100%; height:100%; }
+
+  .nation { fill:none; stroke:#8fb3ff; stroke-width:1.25; }
+  .state { fill:#222a3d; stroke:#555; stroke-width:0.5; cursor:pointer; }
+  .state.occupied { fill:rgba(46,122,46,0.6); }
+  .state.enemy { fill:rgba(170,34,34,0.6); }
+  .state.contested { fill:rgba(255,255,0,0.5); }
+  .troop { fill:#21ff96; stroke:#000; stroke-width:1; cursor:pointer; }
+  .troop.selected { stroke:#ffeb3b; stroke-width:3; }
+  .enemy-troop { fill:#f44336; stroke:#000; stroke-width:1; cursor:pointer; }
+  .move-line { fill:none; stroke:#ffeb3b; stroke-width:2; stroke-dasharray:4 2; pointer-events:none; }
+  .selection-rect { fill:rgba(255,255,0,0.2); stroke:#ffeb3b; stroke-width:1; pointer-events:none; }
+
+  #victory { 
+    position:absolute; 
+    top:50%; 
+    left:50%; 
+    transform:translate(-50%,-50%); 
+    font-size:36px; 
+    color:#00ff00; 
+    display:none; 
+    text-align:center; 
+    text-shadow:0 0 8px #00ff00; 
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="game-container">
+  <svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="right-panel">
+    <div class="ui">
+      <div id="gameTitle">Civil War 1.5</div>
+      <div id="warClock">War Clock: 0000</div>
+      <div id="deployed">Troops Deployed: 0</div>
+      <div id="pool">Deploy Troops: 50</div>
+      <div id="enemyCount">Enemy Troops Located: 00</div>
+      <div id="playerStates">Current Occupied States: 0</div>
+      <div id="enemyStatesUI">Enemy States Occupied: 0</div>
+    </div>
+    <div class="charts-wrapper">
+      <div class="chart-container">
+        <canvas id="troopChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="stateChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="victory">Congratulations! You took over the USA!</div>
+
+<script>
+(async function(){
+  const svg = d3.select("#map");
+  const nationPath = svg.append("path").attr("class","nation");
+  const statesGroup = svg.append("g").attr("class","states");
+  const linesGroup = svg.append("g").attr("class","lines");
+  const troopsGroup = svg.append("g").attr("class","troops");
+  const enemyGroup = svg.append("g").attr("class","enemies");
+  const selectionGroup = svg.append("g");
+
+  const topoURL = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+  const occupiedStates = new Set(); // player
+  const enemyStates = new Set();    // enemy
+  let playableStates = [];
+
+  let deployPool = 100, deployPoolFraction = 0;
+  let enemyDeployPool = 100, enemyDeployFraction = 0;
+
+  const troops = [], enemies = [];
+  let selectedTroops = [];
+
+  const deployedUI = document.getElementById("deployed");
+  const poolUI = document.getElementById("pool");
+  const enemyCountUI = document.getElementById("enemyCount");
+  const warClockUI = document.getElementById("warClock");
+  const victoryUI = document.getElementById("victory");
+  const playerStatesUI = document.getElementById("playerStates");
+  const enemyStatesUI = document.getElementById("enemyStatesUI");
+
+  let seconds=0, gameOver=false;
+  let frame=0;
+  let chartsIntervalId = null;
+
+  // --- Chart Setup ---
+  const troopCtx = document.getElementById('troopChart').getContext('2d');
+  const stateCtx = document.getElementById('stateChart').getContext('2d');
+
+  const troopChart = new Chart(troopCtx, {
+    type: 'line',
+    data: { labels: [], datasets:[
+      {label:'Friendly Troops', data:[], borderColor:'#00ff00', backgroundColor:'rgba(0,255,0,0.1)', fill:true, tension:0.3, pointRadius:0},
+      {label:'Enemy Troops', data:[], borderColor:'#ff4c4c', backgroundColor:'rgba(255,76,76,0.1)', fill:true, tension:0.3, pointRadius:0}
+    ]},
+    options: { animation:false, responsive:true, plugins:{legend:{labels:{color:'#fff'}}}, scales:{x:{ticks:{color:'#fff'}}, y:{ticks:{color:'#fff'}}} }
+  });
+
+  const stateChart = new Chart(stateCtx, {
+    type: 'line',
+    data: { labels: [], datasets:[
+      {label:'Friendly States', data:[], borderColor:'#00ff00', backgroundColor:'rgba(0,255,0,0.1)', fill:true, tension:0.3, pointRadius:0},
+      {label:'Enemy States', data:[], borderColor:'#ff4c4c', backgroundColor:'rgba(255,76,76,0.1)', fill:true, tension:0.3, pointRadius:0}
+    ]},
+    options: { animation:false, responsive:true, plugins:{legend:{labels:{color:'#fff'}}}, scales:{x:{ticks:{color:'#fff'}}, y:{ticks:{color:'#fff'}}} }
+  });
+
+  function updateCharts(){
+    const timeLabel = String(seconds);
+    if(troopChart.data.labels.length>100){ troopChart.data.labels.shift(); troopChart.data.datasets.forEach(d=>d.data.shift()); }
+    troopChart.data.labels.push(timeLabel);
+    troopChart.data.datasets[0].data.push(troops.length);
+    troopChart.data.datasets[1].data.push(enemies.length);
+    troopChart.update();
+
+    if(stateChart.data.labels.length>100){ stateChart.data.labels.shift(); stateChart.data.datasets.forEach(d=>d.data.shift()); }
+    stateChart.data.labels.push(timeLabel);
+    stateChart.data.datasets[0].data.push(occupiedStates.size);
+    stateChart.data.datasets[1].data.push(enemyStates.size);
+    stateChart.update();
+  }
+
+  function updateUI(){
+    deployedUI.textContent=`Troops Deployed: ${troops.length}`;
+    poolUI.textContent=`Deploy Troops: ${Math.floor(deployPool)}`;
+    enemyCountUI.textContent=`Enemy Troops Located: ${String(enemies.length).padStart(2,'0')}`;
+    playerStatesUI.textContent=`Current Occupied States: ${occupiedStates.size}`;
+    enemyStatesUI.textContent=`Enemy States Occupied: ${enemyStates.size}`;
+  }
+
+  function jitter(x,y,range=10){
+    const angle=Math.random()*2*Math.PI;
+    const r=Math.random()*range;
+    return [x+Math.cos(angle)*r, y+Math.sin(angle)*r];
+  }
+
+  const us = await d3.json(topoURL);
+  const nation = topojson.feature(us, us.objects.nation);
+  const states = topojson.feature(us, us.objects.states).features;
+
+  const projection = d3.geoAlbersUsa().fitSize([1100,700], nation);
+  const path = d3.geoPath(projection);
+
+  nationPath.datum(nation).attr("d", path);
+  statesGroup.selectAll("path").data(states, d=>d.id)
+    .join("path").attr("class","state").attr("d", path);
+
+  const stateCentroids = new Map();
+  states.forEach(s=>{
+    try{
+      const coords=d3.geoCentroid(s);
+      const c=projection(coords);
+      if(c) stateCentroids.set(s.id,c);
+    }catch{}
+  });
+
+  const ignoreNames = new Set(["Alaska","Hawaii"]);
+  states.forEach(s=>{ if(!ignoreNames.has(s.properties.name)) playableStates.push(s); });
+  const stateLastOwner = new Map(playableStates.map(s=>[s.id,null]));
+
+  // --- Initial Troops ---
+  const ca = states.find(s=>s.properties.name==="California");
+  if(ca && stateCentroids.get(ca.id)){
+    const [cx,cy]=stateCentroids.get(ca.id);
+    const [jx,jy]=jitter(cx,cy);
+    troops.push({id:Date.now(), x:jx, y:jy, moving:false});
+  }
+  const startEnemyNames = ["Maine","New Hampshire","Massachusetts","Rhode Island","Connecticut"];
+  startEnemyNames.forEach((name, idx)=>{
+    const st = states.find(s=>s.properties.name===name);
+    if(st && stateCentroids.get(st.id)){
+      const [ex,ey]=stateCentroids.get(st.id);
+      const [jx,jy]=jitter(ex,ey);
+      const e = { 
+        id:Date.now()+1000+idx, 
+        x:jx, y:jy, moving:false, garrison:false,
+        lastRetarget:0, idleFrames:0, huntTargetId:null
+      };
+      enemies.push(e);
+    }
+  });
+
+  function drawStates(statePresence){
+    statesGroup.selectAll("path")
+      .attr("class", d=>{
+        let cls="state";
+        const p = statePresence.get(d.id) || {p:0,e:0};
+        if(p.p>0 && p.e>0) cls+=" contested";
+        else if(p.p>0) cls+=" occupied";
+        else if(p.e>0) cls+=" enemy";
+        return cls;
+      });
+  }
+
+  function clampToMap(x,y){
+    const w = svg.node().clientWidth || window.innerWidth;
+    const h = svg.node().clientHeight || window.innerHeight*0.7;
+    return [Math.max(0, Math.min(w, x)), Math.max(0, Math.min(h, y))];
+  }
+
+  // --- Presence cache for AI decisions (updated each frame) ---
+  let lastPresence = new Map(playableStates.map(s=>[s.id,{p:0,e:0}]));
+
+  // --- Scoring-based target choice: adds green/neutral, aggressive roaming, optional troop hunting ---
+  function enemyChooseTarget(e, forceRoam=false){
+    if(e.garrison) return;
+
+    const HUNT_BASE_PROB = 0.18;
+    const HUNT_NEAR_DIST = 120;
+
+    let nearestTroop = null, nearestTroopDist = Infinity;
+    for(const t of troops){
+      const d = Math.hypot(t.x - e.x, t.y - e.y);
+      if(d < nearestTroopDist){ nearestTroopDist = d; nearestTroop = t; }
+    }
+    const shouldHunt = (!!nearestTroop && nearestTroopDist < HUNT_NEAR_DIST) || (Math.random() < HUNT_BASE_PROB);
+
+    if(shouldHunt && nearestTroop){
+      e.huntTargetId = nearestTroop.id;
+      e.targetX = nearestTroop.x;
+      e.targetY = nearestTroop.y;
+      e.targetStateId = null;
+      e.moving = true;
+      e.lastRetarget = frame;
+      return;
+    } else {
+      e.huntTargetId = null;
+    }
+
+    let best=null, bestScore=-Infinity;
+
+    for(const s of playableStates){
+      const c = stateCentroids.get(s.id);
+      if(!c) continue;
+
+      const ours = enemyStates.has(s.id);
+      const theirs = occupiedStates.has(s.id);
+      const neutral = !ours && !theirs;
+
+      if(ours && !forceRoam) continue;
+
+      const pres = lastPresence.get(s.id) || {p:0,e:0};
+      const dist = Math.hypot(c[0]-e.x, c[1]-e.y);
+
+      let base = 0;
+      if(neutral) base = 100;
+      else if(theirs) base = 75;
+      else base = 15;
+
+      const playerDef = pres.p || 0;
+      const enemyHere = pres.e || 0;
+
+      let defensePenalty = playerDef * 18;
+      let weakBonus = 0;
+      if(neutral) weakBonus += 25;
+      if(theirs && playerDef <= 1) weakBonus += 20;
+      if(theirs && playerDef === 0) weakBonus += 35;
+
+      const distancePenalty = dist * 0.20;
+      const expansionBonus = neutral ? Math.max(0, 20 - enemyStates.size) : 0;
+      const overstackPenalty = enemyHere >= 5 ? (enemyHere-4)*6 : 0;
+
+      const score = base + weakBonus + expansionBonus - defensePenalty - distancePenalty - overstackPenalty;
+
+      if(score > bestScore){
+        bestScore = score;
+        best = { state:s, x:c[0], y:c[1] };
+      }
+    }
+
+    if(best){
+      e.targetStateId = best.state.id;
+      e.targetX = best.x; e.targetY = best.y;
+      e.moving = true;
+      e.lastRetarget = frame;
+    }
+  }
+
+  // Troop selection and movement
+  let selectStart=null, selectionRect=null, dragLine=null, draggingTroop=null;
+  let isDraggingLine=false, isSelecting=false, didDragOrSelect=false;
+
+  svg.on("mousedown",(event)=>{
+    if(gameOver) return;
+    if(event.shiftKey) return;
+    const [mx,my] = d3.pointer(event);
+    draggingTroop=null; isDraggingLine=false; isSelecting=false; didDragOrSelect=false;
+
+    for(const t of troops){
+      if(Math.hypot(t.x-mx,t.y-my)<10){
+        draggingTroop=t;
+        dragLine=linesGroup.append("line").attr("class","move-line").attr("x1",t.x).attr("y1",t.y).attr("x2",t.x).attr("y2",t.y);
+        if(!selectedTroops.includes(t)) selectedTroops=[t];
+        updateTroopHighlight();
+        selectStart=[mx,my];
+        return;
+      }
+    }
+    selectStart=[mx,my]; isSelecting=true;
+    if(!selectionRect) selectionRect=selectionGroup.append("rect").attr("class","selection-rect");
+  });
+
+  svg.on("mousemove",(event)=>{
+    if(gameOver) return;
+    const [mx,my]=d3.pointer(event);
+    if(dragLine && draggingTroop){
+      const dx=mx-selectStart[0], dy=my-selectStart[1];
+      if(Math.hypot(dx,dy)>3){ isDraggingLine=true; didDragOrSelect=true; }
+      dragLine.attr("x2",mx).attr("y2",my);
+    } else if(isSelecting && selectionRect){
+      didDragOrSelect=true;
+      const [x0,y0]=selectStart;
+      selectionRect.attr("x",Math.min(x0,mx)).attr("y",Math.min(y0,my))
+        .attr("width",Math.abs(mx-x0)).attr("height",Math.abs(my-y0));
+    }
+  });
+
+  svg.on("mouseup",(event)=>{
+    if(gameOver) return;
+    const [mx,my]=d3.pointer(event);
+    if(dragLine && draggingTroop){
+      if(isDraggingLine) selectedTroops.forEach(t=>{ t.targetX=mx; t.targetY=my; t.moving=true; });
+      dragLine.remove(); dragLine=null; draggingTroop=null; isDraggingLine=false;
+    } else if(isSelecting && selectionRect){
+      const [x0,y0]=selectStart;
+      selectedTroops = troops.filter(t=>{
+        return t.x>=Math.min(x0,mx) && t.x<=Math.max(x0,mx) &&
+               t.y>=Math.min(y0,my) && t.y<=Math.max(y0,my);
+      });
+      selectionRect.remove(); selectionRect=null; isSelecting=false;
+      updateTroopHighlight();
+    }
+  });
+
+  function updateTroopHighlight(){ troopsGroup.selectAll("circle").classed("selected",d=>selectedTroops.includes(d)); }
+
+  svg.on("click.deploy",(event)=>{
+    if(gameOver) return;
+    if(didDragOrSelect) return;
+    if(Math.floor(deployPool)<=0) return;
+    const [mx,my]=d3.pointer(event);
+    const coords=projection.invert([mx,my]);
+    const s=states.find(st=>d3.geoContains(st, coords));
+    if(s && occupiedStates.has(s.id)){
+      const [jx,jy]=jitter(mx,my);
+      troops.push({id:Date.now()+Math.random()*1000, x:jx, y:jy, moving:false});
+      deployPool=Math.floor(deployPool)-1;
+      updateUI();
+    }
+  });
+
+  function recomputePresenceAndOwnership(){
+    const presence = new Map(playableStates.map(s=>[s.id,{p:0,e:0}]));  
+    for(const t of troops){
+      const coords = projection.invert([t.x,t.y]);
+      const st = states.find(s=> d3.geoContains(s, coords));
+      if(st && !ignoreNames.has(st.properties.name)){
+        const cell = presence.get(st.id);
+        if(cell) cell.p++;
+      }
+    }
+    for(const e of enemies){
+      const coords = projection.invert([e.x,e.y]);
+      const st = states.find(s=> d3.geoContains(s, coords));
+      if(st && !ignoreNames.has(st.properties.name)){
+        const cell = presence.get(st.id);
+        if(cell) cell.e++;
+      }
+    }
+    occupiedStates.clear();
+    enemyStates.clear();
+    for(const s of playableStates){
+      const id = s.id;
+      const {p,e} = presence.get(id) || {p:0,e:0};
+      let newOwner = null;
+      if(p>0 && e===0) newOwner = 'player';
+      else if(e>0 && p===0) newOwner = 'enemy';
+      else newOwner = null;
+      const prev = stateLastOwner.get(id) ?? null;
+      if(prev !== newOwner){
+        if(newOwner === 'player'){ deployPool += 1; }
+        else if(newOwner === 'enemy'){ 
+          enemyDeployPool += 1; 
+          const troopsInState = enemies.filter(en=>{
+            const c = projection.invert([en.x,en.y]);
+            return d3.geoContains(s, c);
+          });
+          if(!troopsInState.some(t=>t.garrison)){
+            if(troopsInState.length > 0){
+              troopsInState[0].garrison = true;
+              troopsInState[0].moving = false;
+            }
+          }
+        }
+        stateLastOwner.set(id, newOwner);
+      }
+      if(newOwner==='player') occupiedStates.add(id);
+      if(newOwner==='enemy') enemyStates.add(id);
+    }
+    return presence;
+  }
+
+  function enemyAutoDeploy(){
+    if(gameOver) return;
+    while(enemyDeployPool >= 1 && enemyStates.size > 0){
+      const ids = Array.from(enemyStates);
+      const pick = ids[Math.floor(Math.random()*ids.length)];
+      const c = stateCentroids.get(pick);
+      if(!c){ enemyDeployPool = Math.floor(enemyDeployPool)-1; continue; }
+      const [jx,jy]=jitter(c[0], c[1]);
+      const e={id:Date.now()+Math.random()*1000, x:jx, y:jy, moving:false, garrison:false, lastRetarget: frame, idleFrames:0, huntTargetId:null};
+      enemies.push(e);
+      enemyChooseTarget(e, true);
+      enemyDeployPool = Math.floor(enemyDeployPool)-1;
+    }
+  }
+
+  function endGameAsLoss(){
+    gameOver = true;
+    victoryUI.textContent = "Civil War Ended. You Lost.";
+    victoryUI.style.display = "block";
+    victoryUI.style.color = "#ff4444";
+    // stop periodic updates (charts/clock)
+    if(chartsIntervalId !== null) clearInterval(chartsIntervalId);
+  }
+
+  function endGameAsVictory(){
+    gameOver = true;
+    victoryUI.textContent="Congratulations! You took over the USA!";
+    victoryUI.style.display="block";
+    victoryUI.style.color = "#00ff00";
+    if(chartsIntervalId !== null) clearInterval(chartsIntervalId);
+  }
+
+  function gameLoop(){
+    // if gameOver is set, stop the loop entirely (no new frame scheduled)
+    if(gameOver) return;
+
+    frame++;
+
+    const troopSpeed=0.65, enemySpeed=0.60;
+    troops.forEach(t=>{
+      if(t.moving && t.targetX!==undefined){
+        const dx=t.targetX-t.x, dy=t.targetY-t.y, dist=Math.hypot(dx,dy);
+        if(dist<=troopSpeed){ t.x=t.targetX; t.y=t.targetY; t.moving=false; }
+        else { t.x+=dx/dist*troopSpeed; t.y+=dy/dist*troopSpeed; }
+        const c=clampToMap(t.x,t.y); t.x=c[0]; t.y=c[1];
+      }
+    });
+
+    enemies.forEach(e=>{
+      if(e.garrison) return;
+
+      const RETARGET_RANDOM_CHANCE = 0.006;
+      const IDLE_RETARGET_FRAMES = 180;
+
+      if(!e.moving) e.idleFrames++;
+      else e.idleFrames = 0;
+
+      if(!e.moving || Math.random() < RETARGET_RANDOM_CHANCE || e.idleFrames > IDLE_RETARGET_FRAMES){
+        enemyChooseTarget(e, e.idleFrames > IDLE_RETARGET_FRAMES);
+      }
+
+      if(e.huntTargetId){
+        const t = troops.find(t=>t.id===e.huntTargetId);
+        if(t){
+          e.targetX = t.x; e.targetY = t.y;
+        } else {
+          e.huntTargetId = null;
+          enemyChooseTarget(e, true);
+        }
+      }
+
+      if(e.moving && e.targetX!==undefined){
+        const dx=e.targetX-e.x, dy=e.targetY-e.y, dist=Math.hypot(dx,dy);
+        if(dist<=enemySpeed){ 
+          e.x=e.targetX; e.y=e.targetY; 
+          e.moving=false; 
+          e.targetStateId=null; 
+          enemyChooseTarget(e, true);
+        } else { 
+          e.x+=dx/dist*enemySpeed; e.y+=dy/dist*enemySpeed; 
+        }
+        const c=clampToMap(e.x,e.y); e.x=c[0]; e.y=c[1];
+      }
+    });
+
+    // Recompute control and presence (used for scoring next frame)
+    const presence = recomputePresenceAndOwnership();
+    lastPresence = presence;
+
+    // Combat: unchanged (50/50 when within 7px)
+    for(let i=troops.length-1;i>=0;i--){
+      let troopDied=false;
+      for(let j=enemies.length-1;j>=0;j--){
+        if(Math.hypot(troops[i].x-enemies[j].x,troops[i].y-enemies[j].y)<7){
+          if(Math.random()<0.5){
+            troops.splice(i,1); enemyDeployFraction += 0.5; troopDied=true;
+          }else{ enemies.splice(j,1); deployPoolFraction += 0.5; }
+          break;
+        }
+      }
+      if(troopDied) continue;
+    }
+
+    if(deployPoolFraction>=1){ const whole = Math.floor(deployPoolFraction); deployPool += whole; deployPoolFraction -= whole; }
+    if(enemyDeployFraction>=1){ const whole = Math.floor(enemyDeployFraction); enemyDeployPool += whole; enemyDeployFraction -= whole; }
+
+    enemyAutoDeploy();
+    drawStates(presence);
+    updateUI();
+
+    // Check for player's total wipe-out loss condition
+    if(!gameOver && troops.length === 0){
+      // The rule requested: if deployed troops = 0, the player loses immediately,
+      // even if deployPool has troops (they can't be deployed if no states available)
+      endGameAsLoss();
+      return; // don't schedule new frame or further actions
+    }
+
+    // Check for player victory (enemy removed & no enemy states)
+    if(!gameOver && enemies.length===0 && enemyStates.size===0){
+      endGameAsVictory();
+      return;
+    }
+
+    // Render troop and enemy markers
+    troopsGroup.selectAll("circle").data(troops,d=>d.id)
+      .join(
+        enter=>enter.append("circle").attr("class","troop").attr("r",5),
+        update=>update,
+        exit=>exit.remove()
+      )
+      .attr("cx",d=>d.x).attr("cy",d=>d.y)
+      .classed("selected",d=>selectedTroops.includes(d));
+
+    enemyGroup.selectAll("circle").data(enemies,d=>d.id)
+      .join(
+        enter=>enter.append("circle").attr("class","enemy-troop").attr("r",5),
+        update=>update,
+        exit=>exit.remove()
+      )
+      .attr("cx",d=>d.x).attr("cy",d=>d.y);
+
+    // schedule next frame only if game still active
+    if(!gameOver) requestAnimationFrame(gameLoop);
+  }
+
+  requestAnimationFrame(gameLoop);
+
+  // War clock and chart update every 5 seconds
+  chartsIntervalId = setInterval(()=>{
+    if(gameOver) return;
+    seconds += 5;
+    warClockUI.textContent=`War Clock: ${String(seconds).padStart(4,'0')}`;
+    updateCharts();
+    if(seconds % 150 === 0){
+      if(occupiedStates.size > 0) deployPool += occupiedStates.size;
+      if(enemyStates.size > 0) enemyDeployPool += enemyStates.size;
+      updateUI();
+    }
+  },5000);
+
+})();
+</script>
+</body>
+</html>

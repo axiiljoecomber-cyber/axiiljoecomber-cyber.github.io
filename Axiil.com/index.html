@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Axiil Inc. Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+  <style>
+    /* Global */
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: white;
+    }
+
+    /* Header */
+    header {
+      background: #1a2a45;
+      padding: 2rem 3rem;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 2.5rem;
+      font-weight: bold;
+      color: #ffd700; /* golden accent for logo */
+    }
+
+    /* Main container */
+    main {
+      display: flex;
+      justify-content: space-around;
+      padding: 3rem;
+      background: #091026; /* darker lower portion */
+      min-height: calc(100vh - 120px); /* header + padding */
+    }
+
+    /* Sections */
+    section {
+      flex: 1;
+      margin: 0 1rem;
+    }
+
+    h2 {
+      font-size: 1.8rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #555;
+      padding-bottom: 0.5rem;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1rem;
+      background: #1b2a40;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    li:hover {
+      background: #2a3b66;
+    }
+
+    .img-placeholder {
+      width: 50px;
+      height: 50px;
+      background: white;
+      margin-right: 1rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .link-text {
+      color: white;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .link-text:hover {
+      text-decoration: underline;
+    }
+
+    /* Responsive */
+    @media(max-width: 900px) {
+      main {
+        flex-direction: column;
+      }
+      section {
+        margin-bottom: 2rem;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <header>Axiil Inc.</header>
+
+  <main>
+    <!-- Strategy Games -->
+    <section>
+      <h2>Strategy Games</h2>
+      <ul>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/mission2mars.html">Mission 2 Mars (Space Sim)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/civilwar.html">Civil War (USA Map)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/ww3.html">WW3 (World Map)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/warships.html">Warships (World Map)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/cram.html">C-Ram Sim (C-Ram Anti-Aircraft Gun)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="games/riskitall.html">Risk It All (World Map Risk Style Game)</a></li>
+      </ul>
+    </section>
+
+    <!-- Programs -->
+    <section>
+      <h2>Programs</h2>
+      <ul>
+        <li><div class="img-placeholder"></div><a class="link-text" href="programs/operations.html">Operations Overview (Task Manager)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="programs/chatbot.html">Chat Bot</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="programs/webcam.html">Webcam Video Maker (Record / Download)</a></li>
+        <li><div class="img-placeholder"></div><a class="link-text" href="programs/motion.html">Security Webcam (Motion Detect / Auto Record)</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

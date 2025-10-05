@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spaceship Cockpit with Radar</title>
+<style>
+  body { margin: 0; overflow: hidden; background-color: black; font-family: monospace; }
+  #cockpitCanvas { position: absolute; top: 0; left: 0; z-index: 1; }
+  #radarCanvas { position: absolute; z-index: 5; border: 1px solid lime; }
+  #radarHUD { position: absolute; color: lime; text-align: left; font-size: 14px; z-index: 6; }
+</style>
+</head>
+<body>
+
+<canvas id="cockpitCanvas"></canvas>
+<canvas id="radarCanvas"></canvas>
+<div id="radarHUD"></div>
+
+<script>
+// --- CANVASES ---
+const cockpitCanvas = document.getElementById('cockpitCanvas');
+const ctx = cockpitCanvas.getContext('2d');
+cockpitCanvas.width = window.innerWidth;
+cockpitCanvas.height = window.innerHeight;
+let width = cockpitCanvas.width;
+let height = cockpitCanvas.height;
+
+const radarCanvas = document.getElementById('radarCanvas');
+const rctx = radarCanvas.getContext('2d');
+let radarSize = Math.min(width, height) * 0.5;
+radarCanvas.width = radarSize;
+radarCanvas.height = radarSize;
+radarCanvas.style.right = '10px';
+radarCanvas.style.bottom = '10px';
+radarCanvas.style.left = 'auto';
+radarCanvas.style.top = 'auto';
+
+const radarHUD = document.getElementById("radarHUD");
+radarHUD.style.right = `${radarSize + 20}px`;
+radarHUD.style.bottom = '10px';
+radarHUD.innerHTML = "";
+
+// --- STARFIELD ---
+const starCount = 200;
+let stars = [];
+for (let i = 0; i < starCount; i++) stars.push({x: Math.random()*width, y: Math.random()*height, z: Math.random()*width});
+
+// --- SHIP ---
+let ship = {x:0, y:0, speed:200, driftX:0, driftY:0, driftRate:0.05};
+let keys = {};
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+// --- MARS ---
+let mars = {x:0, y:0, size:20};
+let destinationTime=599, maxDestination=600;
+let cockpitGameOver=false, missionSucceeded=false, arrived=false;
+let lastFrameTime = Date.now();
+
+// --- RADAR ---
+let centerX = radarCanvas.width/2;
+let centerY = radarCanvas.height/2;
+let radarRadius = radarCanvas.width/2 - 10;
+const centerRadius = 6;
+
+let targetCount = 10;
+let targets = [];
+let friendlyTargets = [];
+let motherships = [];
+let missiles = [];
+let enemyMissiles = [];
+let score=0, health=100;
+let startTime = Date.now();
+let radarGameOver=false;
+let alertMessage="", alertTimeout=null;
+
+// --- TARGET INITIALIZATION ---
+function initTargets() {
+  targets = [];
+  for(let i=0;i<targetCount;i++) targets.push(createTarget());
+  initFriendlyTargets();
+  initMotherships();
+}
+
+function createTarget(){
+  let type = ["orbit","inbound","flyby"][Math.floor(Math.random()*3)];
+  let angle = Math.random()*Math.PI*2;
+  let radius = radarRadius*(0.8+0.2*Math.random());
+  let speed = 0.0003 + Math.random()*0.0004;
+  let radialSpeed = (Math.random()-0.5)*0.02;
+  let x,y,dx,dy;
+  if(type==="flyby"){let fromLeft=Math.random()<0.5;x=fromLeft?-20:radarCanvas.width+20;y=Math.random()*radarCanvas.height;dx=(fromLeft?1:-1)*(0.2+Math.random()*0.3); dy=(Math.random()-0.5)*0.3;}
+  return {type, angle, radius, speed, radialSpeed, x, y, dx, dy};
+}
+
+// --- FRIENDLY TARGETS ---
+function initFriendlyTargets(){
+    friendlyTargets = [];
+    let count = 1 + Math.floor(Math.random()*2);
+    for(let i=0;i<count;i++){
+        friendlyTargets.push(createFriendly());
+    }
+}
+
+function createFriendly(){
+    let fromLeft = Math.random()<0.5;
+    let x = fromLeft?-20:radarCanvas.width+20;
+    let y = Math.random()*radarCanvas.height;
+    let dx = (fromLeft?1:-1)*(0.2+Math.random()*0.1);
+    let dy = (Math.random()-0.5)*0.1;
+    return {x,y,dx,dy};
+}
+
+// --- MOTHERSHIPS ---
+function initMotherships(){
+    motherships = [];
+    motherships.push(createMothership());
+    scheduleNextMothership();
+}
+
+function createMothership(){
+    let fromLeft = Math.random()<0.5;
+    let x = fromLeft?-40:radarCanvas.width+40;
+    let y = Math.random()*(radarCanvas.height*0.8)+radarCanvas.height*0.1;
+    let dx = (fromLeft?1:-1)*0.1;
+    let dy = 0;
+    return {x,y,dx,dy,health:100,lastFire:0,fireInterval:5 + Math.random()*5};
+}
+
+function scheduleNextMothership(){
+    let interval = 10 + Math.random()*10;
+    interval *= 0.5 + destinationTime/maxDestination*0.5;
+    setTimeout(()=>{if(!radarGameOver){motherships.push(createMothership()); scheduleNextMothership();}}, interval*1000);
+}
+
+// --- UPDATE & DRAW FUNCTIONS ---
+function updateStars(delta){for(let s of stars){s.z-=50*delta;if(s.z<=0){s.x=Math.random()*width;s.y=Math.random()*height;s.z=width;}}}
+function drawStars(){ctx.fillStyle='#000'; ctx.fillRect(0,0,width,height); for(let s of stars){let sx=(s.x-ship.x)*(width/s.z)+width/2; let sy=(s.y-ship.y)*(width/s.z)+height/2; let size=(1-s.z/width)*3; ctx.fillStyle='#fff'; ctx.fillRect(sx,sy,size,size);} }
+function updateShip(delta){const moveFactor=0.075; if(keys['w']||keys['arrowup']) ship.y-=ship.speed*delta*moveFactor; if(keys['s']||keys['arrowdown']) ship.y+=ship.speed*delta*moveFactor; if(keys['a']||keys['arrowleft']) ship.x-=ship.speed*delta*moveFactor; if(keys['d']||keys['arrowright']) ship.x+=ship.speed*delta*moveFactor; ship.driftX+=(Math.random()-0.5)*ship.driftRate; ship.driftY+=(Math.random()-0.5)*ship.driftRate; ship.driftX=Math.max(Math.min(ship.driftX,50),-50); ship.driftY=Math.max(Math.min(ship.driftY,50),-50); ship.x+=ship.driftX*delta; ship.y+=ship.driftY*delta;}
+function drawMars(){let screenX=width/2+(mars.x-ship.x); let screenY=height/2+(mars.y-ship.y); const halfBoxSize=15; if(screenX<halfBoxSize) screenX=halfBoxSize; if(screenX>width-halfBoxSize) screenX=width-halfBoxSize; if(screenY<halfBoxSize) screenY=halfBoxSize; if(screenY>height-halfBoxSize) screenY=height-halfBoxSize; ctx.beginPath(); ctx.arc(width/2+(mars.x-ship.x),height/2+(mars.y-ship.y),mars.size,0,Math.PI*2); ctx.fillStyle='#f00'; ctx.fill(); drawFuturisticBox(screenX,screenY,halfBoxSize*2); ctx.fillStyle='#fff'; ctx.font='12px Arial'; ctx.textAlign='left'; ctx.fillText('Target: Mars',screenX+halfBoxSize+5,screenY+5);}
+function drawFuturisticBox(x,y,size){const lineLength=10; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x-size/2,y-size/2+lineLength); ctx.lineTo(x-size/2,y-size/2); ctx.lineTo(x-size/2+lineLength,y-size/2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+size/2-lineLength,y-size/2); ctx.lineTo(x+size/2,y-size/2); ctx.lineTo(x+size/2,y-size/2+lineLength); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-size/2,y+size/2-lineLength); ctx.lineTo(x-size/2,y+size/2); ctx.lineTo(x-size/2+lineLength,y+size/2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+size/2-lineLength,y+size/2); ctx.lineTo(x+size/2,y+size/2); ctx.lineTo(x+size/2,y+size/2-lineLength); ctx.stroke();}
+function drawCrosshair(){ctx.strokeStyle='#0f0'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,height/2-1); ctx.lineTo(width,height/2-1); ctx.moveTo(0,height/2+1); ctx.lineTo(width,height/2+1); ctx.stroke(); ctx.beginPath(); ctx.moveTo(width/2,height*0.1); ctx.lineTo(width/2,height*0.9); ctx.stroke();}
+function drawHUD(){ctx.fillStyle='#0f0'; ctx.font='10px monospace'; ctx.textAlign='left'; ctx.fillText(`Destination: ${Math.floor(destinationTime)}s`,20,20); ctx.fillText(`Mars Size: ${mars.size.toFixed(1)}`,20,40); ctx.fillText(`Ship X: ${ship.x.toFixed(1)}`,20,60); ctx.fillText(`Ship Y: ${ship.y.toFixed(1)}`,20,80); ctx.fillText(`Drift X: ${ship.driftX.toFixed(2)}`,20,100); ctx.fillText(`Drift Y: ${ship.driftY.toFixed(2)}`,20,120); ctx.fillText(`Drift Rate: ${ship.driftRate.toFixed(3)}`,20,140);}
+
+// --- RADAR FUNCTIONS ---
+function drawRadarBackground(){rctx.beginPath(); rctx.arc(centerX,centerY,radarRadius,0,Math.PI*2); rctx.fillStyle="rgba(0,0,0,0.6)"; rctx.fill(); rctx.strokeStyle="white"; rctx.lineWidth=1; for(let i=1;i<=4;i++){rctx.beginPath(); rctx.arc(centerX,centerY,(radarRadius/4)*i,0,Math.PI*2); rctx.stroke();} rctx.beginPath(); rctx.moveTo(centerX-radarRadius,centerY); rctx.lineTo(centerX+radarRadius,centerY); rctx.moveTo(centerX,centerY-radarRadius); rctx.lineTo(centerX,centerY+radarRadius); rctx.stroke();}
+function drawCenter(){rctx.beginPath(); rctx.arc(centerX,centerY,centerRadius,0,Math.PI*2); rctx.fillStyle="lime"; rctx.fill();}
+
+// --- UPDATE RADAR ---
+function updateTargets(){
+    // Gradually increase red dot count over time
+    const elapsedTime = (Date.now() - startTime)/1000;
+    const desiredCount = 10 + Math.floor(elapsedTime/15); // +1 every 15s
+    while(targets.length < desiredCount) targets.push(createTarget());
+
+    for(let i=targets.length-1;i>=0;i--){
+        let t=targets[i];
+        if(t.type==="orbit"){t.x=centerX+Math.cos(t.angle)*t.radius;t.y=centerY+Math.sin(t.angle)*t.radius;t.angle+=t.speed;t.radius+=t.radialSpeed;if(t.radius>radarRadius||t.radius<0)t.radialSpeed*=-1;}
+        if(t.type==="inbound"){t.x=centerX+Math.cos(t.angle)*t.radius; t.y=centerY+Math.sin(t.angle)*t.radius; t.radius-=0.2;}
+        if(t.type==="flyby"){t.x+=t.dx; t.y+=t.dy; if(t.x<-30||t.x>radarCanvas.width+30){let fromLeft=Math.random()<0.5;t.x=fromLeft?-20:radarCanvas.width+20;t.y=Math.random()*radarCanvas.height;t.dx=(fromLeft?1:-1)*(0.2+Math.random()*0.3);t.dy=(Math.random()-0.5)*0.3;}}
+        if(Math.hypot(t.x-centerX,t.y-centerY)<=centerRadius+6){
+            health -= 8; // <-- 8% damage now
+            targets.splice(i,1);
+            targets.push(createTarget());
+            if(health<=0){radarGameOver=true; cockpitGameOver=true;}
+        }
+    }
+
+    for(let i=friendlyTargets.length-1;i>=0;i--){let f=friendlyTargets[i]; f.x+=f.dx; f.y+=f.dy; if(f.x<-30||f.x>radarCanvas.width+30||f.y<-30||f.y>radarCanvas.height+30){let fromLeft=Math.random()<0.5; f.x=fromLeft?-20:radarCanvas.width+20; f.y=Math.random()*radarCanvas.height; f.dx=(fromLeft?1:-1)*(0.2+Math.random()*0.1); f.dy=(Math.random()-0.5)*0.1;}}    
+    
+    const now = Date.now()/1000;
+    for(let i=motherships.length-1;i>=0;i--){let m=motherships[i]; m.dx += (Math.random()-0.5)*0.05; m.dy += (Math.random()-0.5)*0.05; m.dx = Math.max(Math.min(m.dx,0.3),-0.3); m.dy = Math.max(Math.min(m.dy,0.3),-0.3); m.x+=m.dx; m.y+=m.dy; if(m.x<-50||m.x>radarCanvas.width+50){motherships.splice(i,1);} if(now - m.lastFire > m.fireInterval){let angle = Math.atan2(centerY-m.y, centerX-m.x); let speed = 2.5; enemyMissiles.push({x:m.x,y:m.y,dx:Math.cos(angle)*speed,dy:Math.sin(angle)*speed}); m.lastFire = now; m.fireInterval = 5 + Math.random()*5;}}
+}
+
+function drawTargets(){for(let t of targets){rctx.beginPath();rctx.arc(t.x,t.y,6,0,Math.PI*2);rctx.fillStyle="red"; rctx.fill();} for(let f of friendlyTargets){rctx.beginPath();rctx.arc(f.x,f.y,6,0,Math.PI*2);rctx.fillStyle="blue"; rctx.fill();}}
+function drawMotherships(){for(let m of motherships){rctx.beginPath();rctx.arc(m.x,m.y,18,0,Math.PI*2);rctx.fillStyle='darkred'; rctx.fill(); rctx.fillStyle='red'; rctx.fillRect(m.x-18, m.y-25, 36, 6); rctx.fillStyle='lime'; rctx.fillRect(m.x-18, m.y-25, 36*(m.health/100), 6);}}
+function drawMissiles(){for(let m of missiles){rctx.beginPath();rctx.arc(m.x,m.y,4,0,Math.PI*2);rctx.fillStyle="lime"; rctx.fill();} for(let m of enemyMissiles){rctx.beginPath();rctx.arc(m.x,m.y,4,0,Math.PI*2);rctx.fillStyle="orange"; rctx.fill();}}
+
+function updateMissiles(){
+    for(let i=missiles.length-1;i>=0;i--){let m=missiles[i]; m.x+=m.dx; m.y+=m.dy; if(Math.hypot(m.x-centerX,m.y-centerY)>radarRadius+20){missiles.splice(i,1);continue;} for(let j=targets.length-1;j>=0;j--){let t=targets[j]; if(Math.hypot(m.x-t.x,m.y-t.y)<8){targets.splice(j,1); missiles.splice(i,1); score++; targets.push(createTarget()); break;}} for(let j=motherships.length-1;j>=0;j--){let mShip=motherships[j]; if(Math.hypot(m.x-mShip.x,m.y-mShip.y)<18){mShip.health-=10; missiles.splice(i,1); if(mShip.health<=0){motherships.splice(j,1); score+=5;} break;}} for(let j=friendlyTargets.length-1;j>=0;j--){let f=friendlyTargets[j]; if(Math.hypot(m.x-f.x,m.y-f.y)<8){missiles.splice(i,1); health-=1; showAlert("Be careful, you hit a friendly!"); if(health<=0){radarGameOver=true; cockpitGameOver=true;} break;}}}
+    for(let i=enemyMissiles.length-1;i>=0;i--){let m=enemyMissiles[i]; m.x+=m.dx; m.y+=m.dy; if(Math.hypot(m.x-centerX,m.y-centerY)<=centerRadius){health-=1; enemyMissiles.splice(i,1); if(health<=0){radarGameOver=true; cockpitGameOver=true;}} else if(m.x<0||m.x>radarCanvas.width||m.y<0||m.y>radarCanvas.height){enemyMissiles.splice(i,1);}}
+}
+
+function updateRadarHUD(){const elapsed=((Date.now()-startTime)/1000).toFixed(1); radarHUD.innerHTML=`Health: ${Math.max(0,Math.floor(health))}%<br>Enemy: ${targets.length}<br>Friendly: ${friendlyTargets.length}<br>Motherships: ${motherships.length}<br>Eliminated: ${score}<br>Time: ${elapsed}s<br>${alertMessage}`;}
+function showAlert(message){alertMessage=message;if(alertTimeout) clearTimeout(alertTimeout);alertTimeout=setTimeout(()=>{alertMessage="";},2000);}
+radarCanvas.addEventListener("click",(e)=>{if(radarGameOver) return; const rect=radarCanvas.getBoundingClientRect(); const clickX=e.clientX-rect.left; const clickY=e.clientY-rect.top; const angle=Math.atan2(clickY-centerY, clickX-centerX); const speed=4; missiles.push({x:centerX,y:centerY,dx:Math.cos(angle)*speed,dy:Math.sin(angle)*speed});});
+
+// --- MAIN LOOP ---
+function updateGame(){
+    const now = Date.now();
+    const delta = (now-lastFrameTime)/1000;
+    lastFrameTime=now;
+
+    // COCKPIT
+    if(!arrived && !cockpitGameOver && !missionSucceeded){
+        updateStars(delta);
+        updateShip(delta);
+        mars.size+=0.002;
+        const dx=mars.x-ship.x;
+        const dy=mars.y-ship.y;
+        const distance=Math.hypot(dx,dy);
+        const maxDistance=Math.hypot(width/2,height/2);
+        const slowFactor=Math.min(distance/maxDistance,1);
+        destinationTime -= delta*(1-slowFactor);
+        if(distance>maxDistance) destinationTime += delta*0.5;
+        destinationTime=Math.max(Math.min(destinationTime,maxDestination),0);
+
+        ctx.clearRect(0,0,width,height);
+        drawStars();
+        drawMars();
+        drawCrosshair();
+        drawHUD();
+
+        if(destinationTime<=0){ 
+            missionSucceeded=true; 
+            arrived=true; 
+        }
+    }
+
+    // RADAR
+    if(!radarGameOver){
+        rctx.clearRect(0,0,radarCanvas.width,radarCanvas.height);
+        drawRadarBackground();
+        drawCenter();
+        updateTargets();
+        updateMissiles();
+        drawTargets();
+        drawMotherships();
+        drawMissiles();
+        updateRadarHUD();
+    }
+
+    // GAME OVER / SUCCESS MESSAGE
+    ctx.fillStyle='#fff'; 
+    ctx.font='36px Arial'; 
+    ctx.textAlign='center';
+    if(missionSucceeded){
+        ctx.fillText('Congratulations, you made it to Mars! Mission Succeeded.', width/2, height/2);
+    } else if(cockpitGameOver || radarGameOver){
+        ctx.fillText('Mission Failed, you did not make it to Mars.', width/2, height/2);
+    }
+
+    requestAnimationFrame(updateGame);
+}
+
+// Start
+initTargets();
+updateGame();
+
+// Resize
+window.addEventListener('resize',()=>{width = cockpitCanvas.width = window.innerWidth; height = cockpitCanvas.height = window.innerHeight; radarSize = Math.min(width, height)*0.5; radarCanvas.width = radarCanvas.height = radarSize; radarCanvas.style.right = '10px'; radarCanvas.style.bottom = '10px'; radarCanvas.style.left = 'auto'; radarCanvas.style.top = 'auto'; radarHUD.style.right = `${radarSize + 20}px`; centerX = radarCanvas.width/2; centerY = radarCanvas.height/2; radarRadius = radarCanvas.width/2 - 10;});
+</script>
+
+</body>
+</html>

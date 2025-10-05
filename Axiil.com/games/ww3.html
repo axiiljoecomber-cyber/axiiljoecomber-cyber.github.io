@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>World War 3</title>
+<style>
+  body { 
+    margin:0; 
+    background:#0b1220; 
+    color:#e8eefc; 
+    font-family:system-ui,sans-serif; 
+    display:flex; 
+    justify-content:center; 
+    align-items:flex-start; 
+  }
+  .game-container { 
+    display:flex; 
+    flex-direction:row; 
+    margin-top:12px; 
+    background:#101a33; 
+    border-radius:6px; 
+    box-shadow:0 0 12px rgba(0,0,0,0.6); 
+    padding:12px; 
+    gap:12px;
+  }
+  #map { 
+    width:1100px; 
+    height:700px; 
+    display:block; 
+    flex-shrink:0;
+    background:#101a33;
+    border-radius:6px;
+  }
+  .right-panel {
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    flex-shrink:0;
+    width:420px;
+  }
+  .ui { 
+    font-size:14px; 
+    line-height:1.4; 
+    font-weight:bold; 
+    font-family:monospace; 
+    user-select:none; 
+    text-align:right; 
+    background:#101a33;
+    border-radius:6px;
+    padding:8px;
+    padding-right:60px; /* shift text away from right edge */
+  }
+  .ui #gameTitle { 
+    color:gold; 
+    font-size:18px; 
+    margin-bottom:12px; 
+    text-align:right; 
+  }
+  .ui #enemyCount, .ui #enemyCountriesUI { color:#ff4c4c; }
+
+  .charts-wrapper { 
+    display:flex; 
+    flex-direction:column; 
+    gap:12px; 
+    flex-wrap:nowrap;
+  }
+  .chart-container { 
+    width:100%; 
+    height:200px; 
+    background:#101a33; 
+    padding:8px; 
+    box-sizing:border-box; 
+    border-radius:6px; 
+  }
+  canvas { display:block; width:100%; height:100%; }
+
+  .nation { fill:none; stroke:#8fb3ff; stroke-width:0.75; }
+  .country { fill:#222a3d; stroke:#555; stroke-width:0.5; cursor:pointer; }
+  .country.occupied { fill:rgba(46,122,46,0.6); }
+  .country.enemy { fill:rgba(170,34,34,0.6); }
+  .country.contested { fill:rgba(255,255,0,0.5); }
+  .troop { fill:#21ff96; stroke:#000; stroke-width:1; cursor:pointer; }
+  .troop.selected { stroke:#ffeb3b; stroke-width:3; }
+  .enemy-troop { fill:#f44336; stroke:#000; stroke-width:1; cursor:pointer; }
+  .move-line { fill:none; stroke:#ffeb3b; stroke-width:2; stroke-dasharray:4 2; pointer-events:none; }
+  .selection-rect { fill:rgba(255,255,0,0.2); stroke:#ffeb3b; stroke-width:1; pointer-events:none; }
+
+  #victory { 
+    position:absolute; 
+    top:50%; 
+    left:50%; 
+    transform:translate(-50%,-50%); 
+    font-size:36px; 
+    color:#00ff00; 
+    display:none; 
+    text-align:center; 
+    text-shadow:0 0 8px #00ff00; 
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="game-container">
+  <svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="right-panel">
+    <div class="ui">
+      <div id="gameTitle">World War 3</div>
+      <div id="warClock">War Clock: 0000</div>
+      <div id="deployed">Troops Deployed: 0</div>
+      <div id="pool">Deploy Troops: 100</div>
+      <div id="enemyCount">Enemy Troops Located: 000</div>
+      <div id="playerCountries">Current Occupied Countries: 0</div>
+      <div id="enemyCountriesUI">Enemy Countries Occupied: 0</div>
+    </div>
+    <div class="charts-wrapper">
+      <div class="chart-container">
+        <canvas id="troopChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="countryChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="victory">Congratulations! You took over the World!</div>
+
+<script>
+(async function(){
+  const svg = d3.select("#map");
+  const nationPath = svg.append("path").attr("class","nation");
+  const countriesGroup = svg.append("g").attr("class","countries");
+  const linesGroup = svg.append("g").attr("class","lines");
+  const troopsGroup = svg.append("g").attr("class","troops");
+  const enemyGroup = svg.append("g").attr("class","enemies");
+  const selectionGroup = svg.append("g");
+
+  // world topojson (countries)
+  const topoURL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+  const occupiedCountries = new Set(); // player-controlled
+  const enemyCountries = new Set();    // enemy-controlled
+  let playableCountries = [];
+
+  let deployPool = 150, deployPoolFraction = 0;
+  // enemyDeployPool starts at 0 because we spawn initial enemy troops directly
+  let enemyDeployPool = 0, enemyDeployFraction = 0;
+
+  const troops = [], enemies = [];
+  let selectedTroops = [];
+
+  const deployedUI = document.getElementById("deployed");
+  const poolUI = document.getElementById("pool");
+  const enemyCountUI = document.getElementById("enemyCount");
+  const warClockUI = document.getElementById("warClock");
+  const victoryUI = document.getElementById("victory");
+  const playerCountriesUI = document.getElementById("playerCountries");
+  const enemyCountriesUI = document.getElementById("enemyCountriesUI");
+
+  let seconds=0, gameOver=false;
+  let frame=0;
+  let chartsIntervalId = null;
+
+  // --- Chart Setup ---
+  const troopCtx = document.getElementById('troopChart').getContext('2d');
+  const countryCtx = document.getElementById('countryChart').getContext('2d');
+
+  const troopChart = new Chart(troopCtx, {
+    type: 'line',
+    data: { labels: [], datasets:[
+      {label:'Friendly Troops', data:[], borderColor:'#00ff00', backgroundColor:'rgba(0,255,0,0.1)', fill:true, tension:0.3, pointRadius:0},
+      {label:'Enemy Troops', data:[], borderColor:'#ff4c4c', backgroundColor:'rgba(255,76,76,0.1)', fill:true, tension:0.3, pointRadius:0}
+    ]},
+    options: { animation:false, responsive:true, plugins:{legend:{labels:{color:'#fff'}}}, scales:{x:{ticks:{color:'#fff'}}, y:{ticks:{color:'#fff'}}} }
+  });
+
+  const countryChart = new Chart(countryCtx, {
+    type: 'line',
+    data: { labels: [], datasets:[
+      {label:'Friendly Countries', data:[], borderColor:'#00ff00', backgroundColor:'rgba(0,255,0,0.1)', fill:true, tension:0.3, pointRadius:0},
+      {label:'Enemy Countries', data:[], borderColor:'#ff4c4c', backgroundColor:'rgba(255,76,76,0.1)', fill:true, tension:0.3, pointRadius:0}
+    ]},
+    options: { animation:false, responsive:true, plugins:{legend:{labels:{color:'#fff'}}}, scales:{x:{ticks:{color:'#fff'}}, y:{ticks:{color:'#fff'}}} }
+  });
+
+  function updateCharts(){
+    const timeLabel = String(seconds);
+    if(troopChart.data.labels.length>100){ troopChart.data.labels.shift(); troopChart.data.datasets.forEach(d=>d.data.shift()); }
+    troopChart.data.labels.push(timeLabel);
+    troopChart.data.datasets[0].data.push(troops.length);
+    troopChart.data.datasets[1].data.push(enemies.length);
+    troopChart.update();
+
+    if(countryChart.data.labels.length>100){ countryChart.data.labels.shift(); countryChart.data.datasets.forEach(d=>d.data.shift()); }
+    countryChart.data.labels.push(timeLabel);
+    countryChart.data.datasets[0].data.push(occupiedCountries.size);
+    countryChart.data.datasets[1].data.push(enemyCountries.size);
+    countryChart.update();
+  }
+
+  function updateUI(){
+    deployedUI.textContent=`Troops Deployed: ${troops.length}`;
+    poolUI.textContent=`Deploy Troops: ${Math.floor(deployPool)}`;
+    enemyCountUI.textContent=`Enemy Troops Located: ${String(enemies.length).padStart(3,'0')}`;
+    playerCountriesUI.textContent=`Current Occupied Countries: ${occupiedCountries.size}`;
+    enemyCountriesUI.textContent=`Enemy Countries Occupied: ${enemyCountries.size}`;
+  }
+
+  function jitter(x,y,range=10){
+    const angle=Math.random()*2*Math.PI;
+    const r=Math.random()*range;
+    return [x+Math.cos(angle)*r, y+Math.sin(angle)*r];
+  }
+
+  // Load world topojson
+  const worldTopo = await d3.json(topoURL);
+  const world = topojson.feature(worldTopo, worldTopo.objects.countries);
+  const countries = world.features;
+
+  // projection & path
+  const projection = d3.geoNaturalEarth1().fitSize([1100,700], world);
+  const path = d3.geoPath(projection);
+
+  nationPath.datum(world).attr("d", path);
+  countriesGroup.selectAll("path").data(countries, d=>d.id)
+    .join("path").attr("class","country").attr("d", path);
+
+  // compute centroids for countries (map id -> [x,y])
+  const countryCentroids = new Map();
+  countries.forEach(c=>{
+    try{
+      const coords = d3.geoCentroid(c);
+      const p = projection(coords);
+      if(p) countryCentroids.set(c.id, p);
+    }catch{}
+  });
+
+  // ignore Antarctica
+  const ignoreNames = new Set(["Antarctica"]);
+  // playableCountries filter
+  countries.forEach(c=>{
+    const name = (c.properties && c.properties.name) ? c.properties.name : "";
+    if(!ignoreNames.has(name)) playableCountries.push(c);
+  });
+
+  const countryLastOwner = new Map(playableCountries.map(s=>[s.id,null]));
+
+  // helper: find country by name (flexible match)
+  function findCountryByName(sub){
+    if(!sub) return null;
+    sub = sub.toLowerCase();
+    return countries.find(c=>{
+      const n = (c.properties && c.properties.name) ? c.properties.name.toLowerCase() : "";
+      return n.includes(sub);
+    });
+  }
+
+  // --- Initial friendly troop placed in California (approx lat/lon) ---
+  // California centroid approx: [-119.4179,36.7783]
+  const caCoords = [-119.4179,36.7783];
+  const caPoint = projection(caCoords);
+  if(caPoint){
+    const [jx,jy] = jitter(caPoint[0], caPoint[1], 12);
+    troops.push({id:Date.now(), x:jx, y:jy, moving:false});
+  }
+
+  // --- Initial Enemy Spawns: Russia, China, North Korea ---
+  // We'll spawn 100 enemy troops per listed country (clustered)
+  const enemyStartNames = ["russia","china","korea"]; // 'korea' catch for north korea
+  const SPAWN_PER_COUNTRY = 15;
+
+  enemyStartNames.forEach((nm)=>{
+    const found = findCountryByName(nm);
+    if(found && countryCentroids.get(found.id)){
+      // mark country as enemy-occupied initially
+      enemyCountries.add(found.id);
+      // spawn many enemies jittered around centroid
+      const [cx,cy] = countryCentroids.get(found.id);
+      for(let i=0;i<SPAWN_PER_COUNTRY;i++){
+        const [jx,jy] = jitter(cx,cy, Math.max(6, Math.min(80, 0.12 * Math.sqrt(i+1) * 50)));
+        enemies.push({
+          id: Date.now() + Math.random()*1e6 + i,
+          x: jx, y: jy,
+          moving: false,
+          garrison: i===0, // make first one a garrison piece for that country
+          lastRetarget: frame,
+          idleFrames: 0,
+          huntTargetId: null
+        });
+      }
+      // set last owner map so the country starts as enemy-owned
+      countryLastOwner.set(found.id, 'enemy');
+    }
+  });
+
+  // --- If some of those names couldn't be matched, try alternatives / warn via console ---
+  // (no UI interruption; console is fine for debugging)
+  // Troop and enemy AI logic largely unchanged; update naming to countries.
+
+  function drawCountries(presence){
+    countriesGroup.selectAll("path")
+      .attr("class", d=>{
+        let cls="country";
+        const p = presence.get(d.id) || {p:0,e:0};
+        if(p.p>0 && p.e>0) cls+=" contested";
+        else if(p.p>0) cls+=" occupied";
+        else if(p.e>0) cls+=" enemy";
+        return cls;
+      });
+  }
+
+  function clampToMap(x,y){
+    const w = svg.node().clientWidth || window.innerWidth;
+    const h = svg.node().clientHeight || window.innerHeight*0.7;
+    return [Math.max(0, Math.min(w, x)), Math.max(0, Math.min(h, y))];
+  }
+
+  // presence cache
+  let lastPresence = new Map(playableCountries.map(s=>[s.id,{p:0,e:0}]));
+
+  // enemy target selection (adapted from original)
+  function enemyChooseTarget(e, forceRoam=false){
+    if(e.garrison) return;
+
+    const HUNT_BASE_PROB = 0.18;
+    const HUNT_NEAR_DIST = 120;
+
+    let nearestTroop = null, nearestTroopDist = Infinity;
+    for(const t of troops){
+      const d = Math.hypot(t.x - e.x, t.y - e.y);
+      if(d < nearestTroopDist){ nearestTroopDist = d; nearestTroop = t; }
+    }
+    const shouldHunt = (!!nearestTroop && nearestTroopDist < HUNT_NEAR_DIST) || (Math.random() < HUNT_BASE_PROB);
+
+    if(shouldHunt && nearestTroop){
+      e.huntTargetId = nearestTroop.id;
+      e.targetX = nearestTroop.x;
+      e.targetY = nearestTroop.y;
+      e.targetCountryId = null;
+      e.moving = true;
+      e.lastRetarget = frame;
+      return;
+    } else {
+      e.huntTargetId = null;
+    }
+
+    let best=null, bestScore=-Infinity;
+
+    for(const s of playableCountries){
+      const c = countryCentroids.get(s.id);
+      if(!c) continue;
+
+      const ours = enemyCountries.has(s.id);
+      const theirs = occupiedCountries.has(s.id);
+      const neutral = !ours && !theirs;
+
+      if(ours && !forceRoam) continue;
+
+      const pres = lastPresence.get(s.id) || {p:0,e:0};
+      const dist = Math.hypot(c[0]-e.x, c[1]-e.y);
+
+      let base = 0;
+      if(neutral) base = 100;
+      else if(theirs) base = 75;
+      else base = 15;
+
+      const playerDef = pres.p || 0;
+      const enemyHere = pres.e || 0;
+
+      let defensePenalty = playerDef * 18;
+      let weakBonus = 0;
+      if(neutral) weakBonus += 25;
+      if(theirs && playerDef <= 1) weakBonus += 20;
+      if(theirs && playerDef === 0) weakBonus += 35;
+
+      const distancePenalty = dist * 0.20;
+      const expansionBonus = neutral ? Math.max(0, 20 - enemyCountries.size) : 0;
+      const overstackPenalty = enemyHere >= 5 ? (enemyHere-4)*6 : 0;
+
+      const score = base + weakBonus + expansionBonus - defensePenalty - distancePenalty - overstackPenalty;
+
+      if(score > bestScore){
+        bestScore = score;
+        best = { country:s, x:c[0], y:c[1] };
+      }
+    }
+
+    if(best){
+      e.targetCountryId = best.country.id;
+      e.targetX = best.x; e.targetY = best.y;
+      e.moving = true;
+      e.lastRetarget = frame;
+    }
+  }
+
+  // Troop selection and movement (same as before)
+  let selectStart=null, selectionRect=null, dragLine=null, draggingTroop=null;
+  let isDraggingLine=false, isSelecting=false, didDragOrSelect=false;
+
+  svg.on("mousedown",(event)=>{
+    if(gameOver) return;
+    if(event.shiftKey) return;
+    const [mx,my] = d3.pointer(event);
+    draggingTroop=null; isDraggingLine=false; isSelecting=false; didDragOrSelect=false;
+
+    for(const t of troops){
+      if(Math.hypot(t.x-mx,t.y-my)<10){
+        draggingTroop=t;
+        dragLine=linesGroup.append("line").attr("class","move-line").attr("x1",t.x).attr("y1",t.y).attr("x2",t.x).attr("y2",t.y);
+        if(!selectedTroops.includes(t)) selectedTroops=[t];
+        updateTroopHighlight();
+        selectStart=[mx,my];
+        return;
+      }
+    }
+    selectStart=[mx,my]; isSelecting=true;
+    if(!selectionRect) selectionRect=selectionGroup.append("rect").attr("class","selection-rect");
+  });
+
+  svg.on("mousemove",(event)=>{
+    if(gameOver) return;
+    const [mx,my]=d3.pointer(event);
+    if(dragLine && draggingTroop){
+      const dx=mx-selectStart[0], dy=my-selectStart[1];
+      if(Math.hypot(dx,dy)>3){ isDraggingLine=true; didDragOrSelect=true; }
+      dragLine.attr("x2",mx).attr("y2",my);
+    } else if(isSelecting && selectionRect){
+      didDragOrSelect=true;
+      const [x0,y0]=selectStart;
+      selectionRect.attr("x",Math.min(x0,mx)).attr("y",Math.min(y0,my))
+        .attr("width",Math.abs(mx-x0)).attr("height",Math.abs(my-y0));
+    }
+  });
+
+  svg.on("mouseup",(event)=>{
+    if(gameOver) return;
+    const [mx,my]=d3.pointer(event);
+    if(dragLine && draggingTroop){
+      if(isDraggingLine) selectedTroops.forEach(t=>{ t.targetX=mx; t.targetY=my; t.moving=true; });
+      dragLine.remove(); dragLine=null; draggingTroop=null; isDraggingLine=false;
+    } else if(isSelecting && selectionRect){
+      const [x0,y0]=selectStart;
+      selectedTroops = troops.filter(t=>{
+        return t.x>=Math.min(x0,mx) && t.x<=Math.max(x0,mx) &&
+               t.y>=Math.min(y0,my) && t.y<=Math.max(y0,my);
+      });
+      selectionRect.remove(); selectionRect=null; isSelecting=false;
+      updateTroopHighlight();
+    }
+  });
+
+  function updateTroopHighlight(){ troopsGroup.selectAll("circle").classed("selected",d=>selectedTroops.includes(d)); }
+
+  svg.on("click.deploy",(event)=>{
+    if(gameOver) return;
+    if(didDragOrSelect) return;
+    if(Math.floor(deployPool)<=0) return;
+    const [mx,my]=d3.pointer(event);
+    const coords=projection.invert([mx,my]);
+    // find which country the click is in
+    const ctry = countries.find(st=> d3.geoContains(st, coords));
+    if(ctry && occupiedCountries.has(ctry.id)){
+      const [jx,jy]=jitter(mx,my);
+      troops.push({id:Date.now()+Math.random()*1000, x:jx, y:jy, moving:false});
+      deployPool=Math.floor(deployPool)-1;
+      updateUI();
+    }
+  });
+
+  function recomputePresenceAndOwnership(){
+    const presence = new Map(playableCountries.map(s=>[s.id,{p:0,e:0}]));  
+    for(const t of troops){
+      const coords = projection.invert([t.x,t.y]);
+      const st = countries.find(s=> d3.geoContains(s, coords));
+      if(st && !ignoreNames.has(st.properties && st.properties.name)){
+        const cell = presence.get(st.id);
+        if(cell) cell.p++;
+      }
+    }
+    for(const e of enemies){
+      const coords = projection.invert([e.x,e.y]);
+      const st = countries.find(s=> d3.geoContains(s, coords));
+      if(st && !ignoreNames.has(st.properties && st.properties.name)){
+        const cell = presence.get(st.id);
+        if(cell) cell.e++;
+      }
+    }
+    occupiedCountries.clear();
+    enemyCountries.clear();
+    for(const s of playableCountries){
+      const id = s.id;
+      const {p,e} = presence.get(id) || {p:0,e:0};
+      let newOwner = null;
+      if(p>0 && e===0) newOwner = 'player';
+      else if(e>0 && p===0) newOwner = 'enemy';
+      else newOwner = null;
+      const prev = countryLastOwner.get(id) ?? null;
+      if(prev !== newOwner){
+        if(newOwner === 'player'){ deployPool += 1; }
+        else if(newOwner === 'enemy'){ 
+          enemyDeployPool += 1; 
+          const troopsInCountry = enemies.filter(en=>{
+            const c = projection.invert([en.x,en.y]);
+            return d3.geoContains(s, c);
+          });
+          if(!troopsInCountry.some(t=>t.garrison)){
+            if(troopsInCountry.length > 0){
+              troopsInCountry[0].garrison = true;
+              troopsInCountry[0].moving = false;
+            }
+          }
+        }
+        countryLastOwner.set(id, newOwner);
+      }
+      if(newOwner==='player') occupiedCountries.add(id);
+      if(newOwner==='enemy') enemyCountries.add(id);
+    }
+    return presence;
+  }
+
+  function enemyAutoDeploy(){
+    if(gameOver) return;
+    while(enemyDeployPool >= 1 && enemyCountries.size > 0){
+      const ids = Array.from(enemyCountries);
+      const pick = ids[Math.floor(Math.random()*ids.length)];
+      const c = countryCentroids.get(pick);
+      if(!c){ enemyDeployPool = Math.floor(enemyDeployPool)-1; continue; }
+      const [jx,jy]=jitter(c[0], c[1], 18);
+      const e={id:Date.now()+Math.random()*1000, x:jx, y:jy, moving:false, garrison:false, lastRetarget: frame, idleFrames:0, huntTargetId:null};
+      enemies.push(e);
+      enemyChooseTarget(e, true);
+      enemyDeployPool = Math.floor(enemyDeployPool)-1;
+    }
+  }
+
+  function endGameAsLoss(){
+    gameOver = true;
+    victoryUI.textContent = "World War 3 Ended. You Lost.";
+    victoryUI.style.display = "block";
+    victoryUI.style.color = "#ff4444";
+    if(chartsIntervalId !== null) clearInterval(chartsIntervalId);
+  }
+
+  function endGameAsVictory(){
+    gameOver = true;
+    victoryUI.textContent="Congratulations! You took over the World!";
+    victoryUI.style.display="block";
+    victoryUI.style.color = "#00ff00";
+    if(chartsIntervalId !== null) clearInterval(chartsIntervalId);
+  }
+
+  function gameLoop(){
+    if(gameOver) return;
+
+    frame++;
+
+    const troopSpeed=0.20, enemySpeed=0.18;
+    troops.forEach(t=>{
+      if(t.moving && t.targetX!==undefined){
+        const dx=t.targetX-t.x, dy=t.targetY-t.y, dist=Math.hypot(dx,dy);
+        if(dist<=troopSpeed){ t.x=t.targetX; t.y=t.targetY; t.moving=false; }
+        else { t.x+=dx/dist*troopSpeed; t.y+=dy/dist*troopSpeed; }
+        const c=clampToMap(t.x,t.y); t.x=c[0]; t.y=c[1];
+      }
+    });
+
+    enemies.forEach(e=>{
+      if(e.garrison) return;
+
+      const RETARGET_RANDOM_CHANCE = 0.006;
+      const IDLE_RETARGET_FRAMES = 180;
+
+      if(!e.moving) e.idleFrames++;
+      else e.idleFrames = 0;
+
+      if(!e.moving || Math.random() < RETARGET_RANDOM_CHANCE || e.idleFrames > IDLE_RETARGET_FRAMES){
+        enemyChooseTarget(e, e.idleFrames > IDLE_RETARGET_FRAMES);
+      }
+
+      if(e.huntTargetId){
+        const t = troops.find(t=>t.id===e.huntTargetId);
+        if(t){
+          e.targetX = t.x; e.targetY = t.y;
+        } else {
+          e.huntTargetId = null;
+          enemyChooseTarget(e, true);
+        }
+      }
+
+      if(e.moving && e.targetX!==undefined){
+        const dx=e.targetX-e.x, dy=e.targetY-e.y, dist=Math.hypot(dx,dy);
+        if(dist<=enemySpeed){ 
+          e.x=e.targetX; e.y=e.targetY; 
+          e.moving=false; 
+          e.targetCountryId=null; 
+          enemyChooseTarget(e, true);
+        } else { 
+          e.x+=dx/dist*enemySpeed; e.y+=dy/dist*enemySpeed; 
+        }
+        const c=clampToMap(e.x,e.y); e.x=c[0]; e.y=c[1];
+      }
+    });
+
+    // Recompute control and presence (used for scoring next frame)
+    const presence = recomputePresenceAndOwnership();
+    lastPresence = presence;
+
+    // Combat (50/50)
+    for(let i=troops.length-1;i>=0;i--){
+      let troopDied=false;
+      for(let j=enemies.length-1;j>=0;j--){
+        if(Math.hypot(troops[i].x-enemies[j].x,troops[i].y-enemies[j].y)<7){
+          if(Math.random()<0.5){
+            troops.splice(i,1); enemyDeployFraction += 0.5; troopDied=true;
+          }else{ enemies.splice(j,1); deployPoolFraction += 0.5; }
+          break;
+        }
+      }
+      if(troopDied) continue;
+    }
+
+    if(deployPoolFraction>=1){ const whole = Math.floor(deployPoolFraction); deployPool += whole; deployPoolFraction -= whole; }
+    if(enemyDeployFraction>=1){ const whole = Math.floor(enemyDeployFraction); enemyDeployPool += whole; enemyDeployFraction -= whole; }
+
+    enemyAutoDeploy();
+    drawCountries(presence);
+    updateUI();
+
+    // Loss condition: no deployed troops -> immediate loss
+    if(!gameOver && troops.length === 0){
+      endGameAsLoss();
+      return;
+    }
+
+    // Victory: no enemies and no enemy countries
+    if(!gameOver && enemies.length===0 && enemyCountries.size===0){
+      endGameAsVictory();
+      return;
+    }
+
+    // Render troop and enemy markers
+    troopsGroup.selectAll("circle").data(troops,d=>d.id)
+      .join(
+        enter=>enter.append("circle").attr("class","troop").attr("r",5),
+        update=>update,
+        exit=>exit.remove()
+      )
+      .attr("cx",d=>d.x).attr("cy",d=>d.y)
+      .classed("selected",d=>selectedTroops.includes(d));
+
+    enemyGroup.selectAll("circle").data(enemies,d=>d.id)
+      .join(
+        enter=>enter.append("circle").attr("class","enemy-troop").attr("r",5),
+        update=>update,
+        exit=>exit.remove()
+      )
+      .attr("cx",d=>d.x).attr("cy",d=>d.y);
+
+    if(!gameOver) requestAnimationFrame(gameLoop);
+  }
+
+  requestAnimationFrame(gameLoop);
+
+  // War clock and chart update every 5 seconds
+  chartsIntervalId = setInterval(()=>{
+    if(gameOver) return;
+    seconds += 5;
+    warClockUI.textContent=`War Clock: ${String(seconds).padStart(4,'0')}`;
+    updateCharts();
+    if(seconds % 150 === 0){
+      if(occupiedCountries.size > 0) deployPool += occupiedCountries.size;
+      if(enemyCountries.size > 0) enemyDeployPool += enemyCountries.size;
+      updateUI();
+    }
+  },5000);
+
+})();
+</script>
+</body>
+</html>

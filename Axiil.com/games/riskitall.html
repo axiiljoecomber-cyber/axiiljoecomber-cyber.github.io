@@ -1,0 +1,294 @@
+<!doctype html> 
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>World Map Drag Soldiers</title>
+<style>
+  body { margin:0; background:#0b1220; display:flex; justify-content:center; align-items:center; height:100vh; }
+  #map { width:1100px; height:700px; background:#101a33; border-radius:6px; }
+  .country { fill:#222a3d; stroke:#555; stroke-width:0.5; cursor:pointer; }
+  .region-label {
+    font-family: sans-serif;
+    font-size:12px;
+    fill:white;
+    stroke:black;
+    stroke-width:3px;
+    paint-order:stroke;
+    text-anchor:middle;
+    dominant-baseline:middle;
+  }
+  .connection-line {
+    stroke: limegreen;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    stroke-opacity: 0.5;
+  }
+  .barracks-box { stroke-width: 2; rx: 10; ry: 10; }
+  .friendly-box { fill: #1c2a40; stroke: #4cafeb; }
+  .enemy-box { fill: #2a1c1c; stroke: #f44336; }
+  .barracks-label { font-family: sans-serif; font-size: 14px; fill: #4cafeb; text-anchor: middle; dominant-baseline: hanging; font-weight: bold; }
+  .enemy-label { fill: #f44336; }
+  .soldier-count { font-family: sans-serif; font-size: 20px; fill: white; text-anchor: middle; dominant-baseline: middle; font-weight: bold; cursor: grab; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+</head>
+<body>
+<svg id="map" preserveAspectRatio="xMidYMid meet"></svg>
+
+<script>
+(async function(){
+  const svg = d3.select("#map");
+  const countriesGroup = svg.append("g").attr("class","countries");
+  const regionsGroup = svg.append("g").attr("class","regions");
+  const connectionsGroup = svg.append("g").attr("class","connections");
+  const uiGroup = svg.append("g").attr("class","ui");
+
+  const MAP_WIDTH = 1100, MAP_HEIGHT = 700;
+
+  // Load world map
+  const topoURL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+  const worldTopo = await d3.json(topoURL);
+  const world = topojson.feature(worldTopo, worldTopo.objects.countries);
+  const countries = world.features.filter(c => c.properties.name !== "Antarctica");
+
+  const projection = d3.geoNaturalEarth1().fitSize([MAP_WIDTH, MAP_HEIGHT], world);
+  const path = d3.geoPath(projection);
+
+  // Draw countries
+  countriesGroup.selectAll("path")
+    .data(countries)
+    .join("path")
+    .attr("class","country")
+    .attr("d", path)
+    .attr("fill", "#222a3d");
+
+  // Define regions
+const regionsData = [
+  { name: "USA", coords: [-98,39] },
+  { name: "Canada", coords: [-106,56] },
+  { name: "Mexico", coords: [-102,23] },
+  { name: "Colombia", coords: [-74,4] },
+  { name: "Peru / Brazil", coords: [-50,-15] },
+  { name: "Argentina", coords: [-64,-35] },
+  { name: "Algeria", coords: [-10,28] },
+  { name: "Egypt", coords: [30,26] },
+  { name: "Central Africa", coords: [21,3] },
+  { name: "Southern Africa", coords: [24,-22] },
+  { name: "Greenland", coords: [-42,72] },
+  { name: "Western Europe", coords: [19,52] },
+  { name: "Russia", coords: [105,60] },
+  { name: "Middle East", coords: [61,41] },
+  { name: "China", coords: [108,38] },
+  { name: "India", coords: [78,22] },
+  { name: "Vietnam", coords: [110,12] },
+  { name: "Australia", coords: [134,-25] },
+  { name: "Japan / Korea", coords: [148,36] },
+  { name: "Indonesia", coords: [145,-3] }  // ✅ Centered near Papua New Guinea
+];
+
+  const regionElements = {};
+  const regionLabels = {};
+  const regionTroops = {}; // track troops per region
+
+  regionsData.forEach(r=>{
+    const [x,y] = projection(r.coords);
+    const ellipse = regionsGroup.append("ellipse")
+      .attr("cx", x)
+      .attr("cy", y)
+      .attr("rx", 60)
+      .attr("ry", 30)
+      .attr("fill", "#222a3d")
+      .attr("fill-opacity", 0.5)
+      .attr("stroke", "white")
+      .attr("stroke-width", 2);
+
+    const label = regionsGroup.append("text")
+      .attr("x", x)
+      .attr("y", y)
+      .attr("class","region-label")
+      .text(r.name);
+
+    regionElements[r.name] = ellipse;
+    regionLabels[r.name] = label;
+    regionTroops[r.name] = [];
+  });
+
+  // Draw connection lines
+const connections = [
+  { from: "USA", to: "Canada" },
+  { from: "USA", to: "Mexico" },
+  { from: "Mexico", to: "Colombia" },
+  { from: "Colombia", to: "Peru / Brazil" },
+  { from: "Peru / Brazil", to: "Argentina" },
+  { from: "Algeria", to: "Egypt" },
+  { from: "Egypt", to: "Central Africa" },
+  { from: "Central Africa", to: "Southern Africa" },
+  { from: "Peru / Brazil", to: "Central Africa" },
+  { from: "Greenland", to: "Canada" },
+  { from: "Greenland", to: "Western Europe" },
+  { from: "Western Europe", to: "Algeria" },
+  { from: "Western Europe", to: "Egypt" },
+  { from: "Algeria", to: "Central Africa" },
+  { from: "Middle East", to: "Egypt" },
+  { from: "Middle East", to: "Western Europe" },
+  { from: "Middle East", to: "Russia" },
+  { from: "Middle East", to: "India" },
+  { from: "Middle East", to: "China" },
+  { from: "Russia", to: "China" },
+  { from: "India", to: "China" },
+  { from: "India", to: "Vietnam" },
+  { from: "China", to: "Vietnam" },
+  { from: "Australia", to: "Vietnam" },
+  { from: "Australia", to: "Indonesia" },
+  { from: "Vietnam", to: "Indonesia" },
+  { from: "China", to: "Japan / Korea" },
+  { from: "Russia", to: "Japan / Korea" },
+  { from: "Russia", to: "Western Europe" },
+  { 
+    from: "Canada", 
+    to: "Russia", 
+    fromOffset: [-20, 0], // start left of Canada (near Alaska)
+    toOffset: [20, 0]     // end right of Russia (east edge)
+  }
+];
+
+
+
+connections.forEach(c=>{
+  if(c.from === "Canada" && c.to === "Russia"){
+    const canada = projection(regionsData.find(r=>r.name==="Canada").coords);
+    const russia = projection(regionsData.find(r=>r.name==="Russia").coords);
+
+    // Left of Canada → left edge of map
+    connectionsGroup.append("line")
+      .attr("class","connection-line")
+      .attr("x1", canada[0]-20)
+      .attr("y1", canada[1])
+      .attr("x2", 0)
+      .attr("y2", canada[1]);
+
+    // Right edge of map → right of Russia
+    connectionsGroup.append("line")
+      .attr("class","connection-line")
+      .attr("x1", MAP_WIDTH)
+      .attr("y1", russia[1])
+      .attr("x2", russia[0]+20)
+      .attr("y2", russia[1]);
+
+  } else {
+    const [x1,y1] = projection(regionsData.find(r=>r.name===c.from).coords);
+    const [x2,y2] = projection(regionsData.find(r=>r.name===c.to).coords);
+    connectionsGroup.append("line")
+      .attr("class","connection-line")
+      .attr("x1", x1)
+      .attr("y1", y1)
+      .attr("x2", x2)
+      .attr("y2", y2);
+  }
+});
+
+
+  // --- Barracks ---
+  const barracksWidth = 200, barracksHeight = 100, soldierImgSize = 40;
+  const barracksY = MAP_HEIGHT - barracksHeight - 20;
+
+  // Friendly Barracks
+  const friendlyX = 100;
+  const friendlyGroup = uiGroup.append("g").attr("class","friendly-barracks");
+
+  friendlyGroup.append("rect")
+    .attr("x", friendlyX)
+    .attr("y", barracksY)
+    .attr("width", barracksWidth)
+    .attr("height", barracksHeight)
+    .attr("class","barracks-box friendly-box");
+
+  friendlyGroup.append("text")
+    .attr("x", friendlyX + barracksWidth/2)
+    .attr("y", barracksY + 10)
+    .attr("class","barracks-label")
+    .text("FRIENDLY");
+
+  const friendlySoldier = friendlyGroup.append("image")
+    .attr("xlink:href","https://static.wixstatic.com/media/ca16fe_f8625fd123aa4d6d941a782d3a15c429~mv2.webp")
+    .attr("x", friendlyX + barracksWidth/4 - soldierImgSize/2)
+    .attr("y", barracksY + barracksHeight/2 - soldierImgSize/2)
+    .attr("width", soldierImgSize)
+    .attr("height", soldierImgSize)
+    .call(d3.drag()
+      .on("start", function(event){
+        d3.select(this).raise().attr("width", soldierImgSize*1.5).attr("height", soldierImgSize*1.5);
+      })
+      .on("drag", function(event){
+        d3.select(this).attr("x", event.x - soldierImgSize*0.75).attr("y", event.y - soldierImgSize*0.75);
+      })
+      .on("end", function(event){
+        let placed = false;
+        for (const r of regionsData){
+          const [rx, ry] = projection(r.coords);
+          const dx = event.x - rx, dy = event.y - ry;
+          if (Math.sqrt(dx*dx + dy*dy) < 60){
+            // Place soldier
+            const troop = svg.append("image")
+              .attr("xlink:href","https://static.wixstatic.com/media/ca16fe_f8625fd123aa4d6d941a782d3a15c429~mv2.webp")
+              .attr("x", rx - soldierImgSize/2)
+              .attr("y", ry - soldierImgSize/2)
+              .attr("width", soldierImgSize)
+              .attr("height", soldierImgSize);
+            regionTroops[r.name].push(troop);
+
+            // Reduce text opacity
+            regionLabels[r.name]
+  .attr("fill-opacity", 0.1)      // makes the white fill faint
+  .attr("stroke-opacity", 0.1);   // makes the black stroke faint
+
+            // Highlight region
+            regionElements[r.name].attr("fill","green").attr("fill-opacity",0.5);
+
+            placed = true;
+            break;
+          }
+        }
+        // Reset soldier to barracks
+        d3.select(this)
+          .attr("x", friendlyX + barracksWidth/4 - soldierImgSize/2)
+          .attr("y", barracksY + barracksHeight/2 - soldierImgSize/2)
+          .attr("width", soldierImgSize)
+          .attr("height", soldierImgSize);
+
+        if(!placed){
+          // Optional: maybe some feedback if not placed
+        }
+      })
+    );
+
+  // Enemy Barracks
+  const enemyX = MAP_WIDTH - barracksWidth - 100;
+  const enemyGroup = uiGroup.append("g").attr("class","enemy-barracks");
+
+  enemyGroup.append("rect")
+    .attr("x", enemyX)
+    .attr("y", barracksY)
+    .attr("width", barracksWidth)
+    .attr("height", barracksHeight)
+    .attr("class","barracks-box enemy-box");
+
+  enemyGroup.append("text")
+    .attr("x", enemyX + barracksWidth/2)
+    .attr("y", barracksY + 10)
+    .attr("class","barracks-label enemy-label")
+    .text("ENEMY");
+
+  enemyGroup.append("image")
+    .attr("xlink:href","https://static.wixstatic.com/media/ca16fe_378e560decec45c194c6c17270a450fc~mv2.png")
+    .attr("x", enemyX + barracksWidth/4 - soldierImgSize/2)
+    .attr("y", barracksY + barracksHeight/2 - soldierImgSize/2)
+    .attr("width", soldierImgSize)
+    .attr("height", soldierImgSize);
+
+})();
+</script>
+</body>
+</html>
