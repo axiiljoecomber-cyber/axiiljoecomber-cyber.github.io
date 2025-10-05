@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>C-RAM Simulation</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    overflow: hidden;
+    width: 100%; height: 100%;
+    background: url('https://media.istockphoto.com/id/1073474834/photo/desert-stars.jpg?s=612x612&w=0&k=20&c=pnZ4IeI9RdU3Gg3gxXo8zt2-YtrckjlgLm1epTX959U=') no-repeat center center fixed;
+    background-size: cover;
+    cursor: none;
+  }
+  #canvas { position:absolute; top:0; left:0; }
+  .c-ram {
+    position: absolute; bottom: 20px; left: 20px;
+    width: 80px; transform-origin: 50% 80%;
+    /* Removed scaleX(-1) to face right */
+  }
+</style>
+</head>
+<body>
+
+<img src="https://purepng.com/public/uploads/large/purepng.com-military-jetflightvehiclejetplanemilitaryaircraftairplane-981525065891nmz02.png" id="planeTemplate" style="display:none;">
+<img src="https://media.tenor.com/ptNG8DQFPD4AAAAj/explotion-explode.gif" id="explosionTemplate" style="display:none;">
+<img src="https://www.rheinmetall.com/Rheinmetall%20Group/Systeme%20und%20Produkte/Flugabwehrsysteme/Vernetzte%20Flugabwehr/42712/image-thumb__42712__image-container/Rheinmetall-Vernetzte-Flugabweh-Oerlikon-Revolver-Gun-MK3-Hook-liftable.7e1dcad9.png?1697188192" class="c-ram" id="cRam">
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+let mouse = {x: canvas.width/2, y: canvas.height/2};
+let firing = false;
+let missiles = [];
+let explosions = [];
+let planes = [];
+let planeBullets = [];
+let cRamHealth = 100;
+let enemiesKilled = 0;
+let gameOver = false;
+
+// Firing control
+let missilesFired = 0;
+let reloading = false;
+const maxBurst = 200;
+const reloadTime = 2000; // ms
+
+// Mouse
+document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+document.addEventListener('mousedown', e => firing = true);
+document.addEventListener('mouseup', e => firing = false);
+
+// Classes
+class Missile {
+  constructor(x, y, targetX, targetY, big=false) {
+    this.x = x; this.y = y; this.targetX = targetX; this.targetY = targetY;
+    this.speed = 8;
+    const dx = targetX - x, dy = targetY - y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    this.vx = dx/dist*this.speed; this.vy = dy/dist*this.speed;
+    this.hit = false;
+    this.big = big;
+  }
+  update() {
+    if(this.hit) return true;
+    this.x += this.vx; this.y += this.vy;
+
+    if(Math.abs(this.x - this.targetX)<5 && Math.abs(this.y - this.targetY)<5) {
+      this.hit = true;
+      explosions.push(new Explosion(this.targetX, this.targetY, this.big ? 15 : 5));
+      return true;
+    }
+
+    planes.forEach((plane, idx) => {
+      if(Math.abs(this.x-plane.x)<10 && Math.abs(this.y-plane.y)<10) {
+        this.hit = true;
+        explosions.push(new Explosion(plane.x, plane.y, 15));
+        planes.splice(idx,1);
+        enemiesKilled++;
+      }
+    });
+    return !this.hit;
+  }
+  draw() { if(!this.hit){ ctx.fillStyle='orange'; ctx.fillRect(this.x,this.y,3,1); } }
+}
+
+class PlaneBullet {
+  constructor(x, y, targetX, targetY) {
+    this.x = x; this.y = y;
+    const dx = targetX - x, dy = targetY - y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    this.vx = dx/dist*5; this.vy = dy/dist*5;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+
+    const cRam = document.getElementById('cRam');
+    const cX = 20 + cRam.width/2;
+    const cY = window.innerHeight - 20 - cRam.height/2;
+
+    if(Math.abs(this.x-cX)<10 && Math.abs(this.y-cY)<10){
+      cRamHealth = Math.max(0, cRamHealth-1);
+      explosions.push(new Explosion(this.x,this.y,5));
+      return false;
+    }
+
+    if(this.x<-50 || this.x>canvas.width+50 || this.y<-50 || this.y>canvas.height+50) return false;
+    return true;
+  }
+  draw() { ctx.fillStyle='red'; ctx.fillRect(this.x,this.y,3,2); }
+}
+
+class Explosion { 
+  constructor(x,y,size=5){ this.x=x; this.y=y; this.life=20; this.size=size; }
+  update(){ this.life--; return this.life<=0; }
+  draw(){ ctx.drawImage(document.getElementById('explosionTemplate'), this.x-this.size/2, this.y-this.size/2, this.size, this.size); }
+}
+
+class Plane {
+  constructor(x,y, fromRight=false){
+    this.x=x; this.y=y;
+    this.vx = (fromRight ? -1 : 1) * (1 + Math.random()*2); // left or right
+    this.vy=Math.random()*1-0.5;
+    this.fireCooldown=Math.random()*100+50;
+    this.baseSize = 10; // base size at top of screen
+  }
+  update(){
+    this.x+=this.vx; this.y+=this.vy;
+    if(this.x<-50||this.x>canvas.width+50) this.vx*=-1;
+    if(this.y<0||this.y>150) this.vy*=-1;
+    this.fireCooldown--;
+    if(this.fireCooldown<=0){
+      const cRam = document.getElementById('cRam');
+      const cX = 20 + cRam.width/2;
+      const cY = window.innerHeight - 20 - cRam.height/2;
+      const targetX = cX + (Math.random()*40-20);
+      const targetY = cY + (Math.random()*40-20);
+      planeBullets.push(new PlaneBullet(this.x,this.y,targetX,targetY));
+      this.fireCooldown = Math.random()*100+50;
+    }
+  }
+  draw(){ 
+    let scaleFactor = 1 + Math.min(this.y,150)/150*2; // 1 to 3
+    let size = this.baseSize * scaleFactor;
+
+    ctx.save();
+    ctx.translate(this.x + size/2, this.y + size/2);
+    ctx.scale(this.vx >= 0 ? 1 : -1, 1); // flip horizontally if moving left
+    ctx.drawImage(document.getElementById('planeTemplate'), -size/2, -size/2, size, size);
+    ctx.restore();
+  }
+}
+
+// Initialize planes
+planes.push(new Plane(-50,100));
+planes.push(new Plane(-200,50));
+setInterval(()=>{ 
+  if(!gameOver){
+    const fromRight = Math.random()<0.5;
+    const startX = fromRight ? canvas.width+50 : -50;
+    planes.push(new Plane(startX, Math.random()*150, fromRight));
+  }
+},10000);
+
+// Animation
+function animate(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const cRam = document.getElementById('cRam');
+  const padding = 20;
+  const cX = 20, cY = window.innerHeight - padding - cRam.height - 15;
+
+  // Health bar
+  ctx.fillStyle='red';
+  ctx.fillRect(cX,cY,80*(cRamHealth/100),10);
+  ctx.strokeStyle='white';
+  ctx.strokeRect(cX,cY,80,10);
+
+  // Fire/reload text
+  ctx.font='16px Arial';
+  ctx.textAlign='left';
+  ctx.fillStyle = reloading?'red':'lime';
+  ctx.fillText(reloading?'Reloading':'Fire', cX + cRam.width + 10, cY+10);
+
+  // Laser - updated to bottom center of C-RAM image
+  const gunX = cX + cRam.width/2;
+  const gunY = window.innerHeight - 20; // bottom of C-RAM
+  ctx.strokeStyle='lime';
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(gunX,gunY); ctx.lineTo(mouse.x,mouse.y); ctx.stroke();
+  ctx.fillStyle='lime'; ctx.beginPath(); ctx.arc(mouse.x,mouse.y,3,0,Math.PI*2); ctx.fill();
+
+  // Fire missiles
+  if(firing && !gameOver && !reloading){
+    if(missilesFired < maxBurst){
+      for(let i=0;i<5;i++){
+        missiles.push(new Missile(gunX, gunY, mouse.x+Math.random()*5-2, mouse.y+Math.random()*5-2));
+        missilesFired++;
+      }
+    } else {
+      reloading=true;
+      setTimeout(()=>{ missilesFired=0; reloading=false; }, reloadTime);
+    }
+  }
+
+  missiles = missiles.filter(m=>m.update());
+  missiles.forEach(m=>m.draw());
+  explosions = explosions.filter(e=>!e.update());
+  explosions.forEach(e=>e.draw());
+  planeBullets = planeBullets.filter(b=>b.update());
+  planeBullets.forEach(b=>b.draw());
+  planes.forEach(p=>{p.update(); p.draw();});
+
+  // C-Ram Simulator title
+  ctx.fillStyle='white'; ctx.font='14px Arial'; ctx.textAlign='right';
+  ctx.fillText("C-Ram Simulator", canvas.width-20, window.innerHeight-padding-25);
+
+  // Enemies killed
+  ctx.fillStyle='white'; ctx.font='20px Arial'; ctx.textAlign='right';
+  ctx.fillText(`ENEMIES KILLED: ${enemiesKilled}/20`, canvas.width-20, window.innerHeight-padding);
+
+  // Check win/lose
+  if(!gameOver){
+    if(enemiesKilled >= 20 || cRamHealth <=0) gameOver=true;
+  }
+
+  if(gameOver){
+    ctx.fillStyle = enemiesKilled>=20?'yellow':'red';
+    ctx.font='50px Arial'; ctx.textAlign='center';
+    ctx.fillText(enemiesKilled>=20?"YOU WON!":"YOU LOST!", canvas.width/2, canvas.height/2);
+  } else requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
