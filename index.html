@@ -30,7 +30,7 @@
     header a.home-link {
       color: white;
       text-decoration: none;
-      font-size: 0.85rem; /* smaller font for top right */
+      font-size: 0.85rem;
       font-weight: normal;
     }
 
@@ -43,8 +43,8 @@
       display: flex;
       justify-content: space-around;
       padding: 3rem;
-      background: #091026; /* darker lower portion */
-      min-height: calc(100vh - 80px); /* header + padding */
+      background: #091026;
+      min-height: calc(100vh - 80px);
     }
 
     /* Sections */
@@ -68,10 +68,11 @@
 
     li {
       display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
+      align-items: flex-start;
+      flex-direction: column;
       background: #1b2a40;
-      padding: 0.5rem 1rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
       border-radius: 8px;
       transition: background 0.2s;
     }
@@ -84,14 +85,10 @@
     .list-img {
       width: 120px;
       height: 120px;
-      margin-right: 1rem;
       border-radius: 6px;
-      flex-shrink: 0;
       object-fit: cover;
-    }
-
-    .img-placeholder {
       background: white;
+      margin-bottom: 0.5rem;
     }
 
     .link-text {
@@ -99,10 +96,83 @@
       text-decoration: none;
       font-weight: bold;
       font-size: 1.1rem;
+      margin-bottom: 0.5rem;
     }
 
     .link-text:hover {
       text-decoration: underline;
+    }
+
+    /* Instruction button */
+    .instruction-btn {
+      background: #2b3f77;
+      color: white;
+      border: none;
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: bold;
+      transition: background 0.2s;
+      align-self: flex-start;
+    }
+
+    .instruction-btn:hover {
+      background: #3f5bbf;
+    }
+
+    /* Popup styling */
+    .popup {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #0b1220;
+      border: 2px solid #3f5bbf;
+      padding: 1.5rem;
+      border-radius: 10px;
+      z-index: 1000;
+      width: 300px;
+      color: white;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    }
+
+    .popup h3 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      border-bottom: 1px solid #555;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .popup p {
+      margin: 0.5rem 0;
+    }
+
+    .popup-close {
+      background: #3f5bbf;
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 0.3rem 0.8rem;
+      cursor: pointer;
+      font-weight: bold;
+      margin-top: 1rem;
+    }
+
+    .popup-close:hover {
+      background: #5c76e8;
+    }
+
+    /* Overlay background */
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 999;
     }
 
     /* Responsive */
@@ -135,13 +205,41 @@
     <section>
       <h2>Strategy Games</h2>
       <ul>
-        <li><div class="img-placeholder"></div><a class="link-text" href="games/mission2mars.html" target="_blank">Mission 2 Mars (Space Sim)</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="games/civilwar.html" target="_blank">Civil War (USA Map)</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="games/ww3.html" target="_blank">WW3 (World Map)</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="games/ww3hard.html" target="_blank">WW3 Hard Mode</a></li>
-        <li><img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot"><a class="link-text" href="games/warships.html" target="_blank">Warships (World Map)</a></li>
-        <li><img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot"><a class="link-text" href="games/warshipshard.html" target="_blank">Warships Hard Mode</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="games/cram.html" target="_blank">C-Ram Sim (C-Ram Anti-Aircraft Gun)</a></li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="games/mission2mars.html" target="_blank">Mission 2 Mars (Space Sim)</a>
+          <button class="instruction-btn" onclick="openPopup('popup1')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="games/civilwar.html" target="_blank">Civil War (USA Map)</a>
+          <button class="instruction-btn" onclick="openPopup('popup2')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="games/ww3.html" target="_blank">WW3 (World Map)</a>
+          <button class="instruction-btn" onclick="openPopup('popup3')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="games/ww3hard.html" target="_blank">WW3 Hard Mode</a>
+          <button class="instruction-btn" onclick="openPopup('popup4')">Instructions</button>
+        </li>
+        <li>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot">
+          <a class="link-text" href="games/warships.html" target="_blank">Warships (World Map)</a>
+          <button class="instruction-btn" onclick="openPopup('popup5')">Instructions</button>
+        </li>
+        <li>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot">
+          <a class="link-text" href="games/warshipshard.html" target="_blank">Warships Hard Mode</a>
+          <button class="instruction-btn" onclick="openPopup('popup6')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="games/cram.html" target="_blank">C-Ram Sim (C-Ram Anti-Aircraft Gun)</a>
+          <button class="instruction-btn" onclick="openPopup('popup7')">Instructions</button>
+        </li>
       </ul>
     </section>
 
@@ -149,12 +247,56 @@
     <section>
       <h2>Programs</h2>
       <ul>
-        <li><div class="img-placeholder"></div><a class="link-text" href="programs/operations.html" target="_blank">Operations Overview (Task Manager)</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="programs/chatbot.html" target="_blank">Chat Bot</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="programs/webcam.html" target="_blank">Webcam Video Maker (Record / Download)</a></li>
-        <li><div class="img-placeholder"></div><a class="link-text" href="programs/motion.html" target="_blank">Security Webcam (Motion Detect / Auto Record)</a></li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="programs/operations.html" target="_blank">Operations Overview (Task Manager)</a>
+          <button class="instruction-btn" onclick="openPopup('popup8')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="programs/chatbot.html" target="_blank">Chat Bot</a>
+          <button class="instruction-btn" onclick="openPopup('popup9')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="programs/webcam.html" target="_blank">Webcam Video Maker (Record / Download)</a>
+          <button class="instruction-btn" onclick="openPopup('popup10')">Instructions</button>
+        </li>
+        <li>
+          <div class="img-placeholder"></div>
+          <a class="link-text" href="programs/motion.html" target="_blank">Security Webcam (Motion Detect / Auto Record)</a>
+          <button class="instruction-btn" onclick="openPopup('popup11')">Instructions</button>
+        </li>
       </ul>
     </section>
   </main>
+
+  <!-- Overlay -->
+  <div class="overlay" id="overlay" onclick="closeAllPopups()"></div>
+
+  <!-- Popups -->
+  <div class="popup" id="popup1"><h3>Mission 2 Mars</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup2"><h3>Civil War</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup3"><h3>WW3</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup4"><h3>WW3 Hard Mode</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup5"><h3>Warships</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup6"><h3>Warships Hard Mode</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup7"><h3>C-Ram Sim</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup8"><h3>Operations Overview</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup9"><h3>Chat Bot</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup10"><h3>Webcam Video Maker</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+  <div class="popup" id="popup11"><h3>Security Webcam</h3><p>Sample Text Line 1</p><p>Sample Text Line 2</p><button class="popup-close" onclick="closeAllPopups()">Close</button></div>
+
+  <script>
+    function openPopup(id) {
+      document.getElementById('overlay').style.display = 'block';
+      document.getElementById(id).style.display = 'block';
+    }
+
+    function closeAllPopups() {
+      document.getElementById('overlay').style.display = 'none';
+      document.querySelectorAll('.popup').forEach(p => p.style.display = 'none');
+    }
+  </script>
 </body>
 </html>
