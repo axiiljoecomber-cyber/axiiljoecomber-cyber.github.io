@@ -68,8 +68,7 @@
 
     li {
       display: flex;
-      align-items: flex-start;
-      flex-direction: column;
+      align-items: center;
       background: #1b2a40;
       margin-bottom: 1rem;
       padding: 0.75rem 1rem;
@@ -81,14 +80,20 @@
       background: #2a3b66;
     }
 
-    .img-placeholder,
     .list-img {
       width: 120px;
       height: 120px;
       border-radius: 6px;
       object-fit: cover;
       background: white;
-      margin-bottom: 0.5rem;
+      margin-right: 1rem;
+      flex-shrink: 0;
+    }
+
+    .link-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
 
     .link-text {
@@ -114,7 +119,7 @@
       font-size: 0.9rem;
       font-weight: bold;
       transition: background 0.2s;
-      align-self: flex-start;
+      width: fit-content;
     }
 
     .instruction-btn:hover {
@@ -190,6 +195,13 @@
       header a.home-link {
         margin-top: 0.5rem;
       }
+      li {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .list-img {
+        margin-bottom: 0.5rem;
+      }
     }
   </style>
 </head>
@@ -206,39 +218,53 @@
       <h2>Strategy Games</h2>
       <ul>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="games/mission2mars.html" target="_blank">Mission 2 Mars (Space Sim)</a>
-          <button class="instruction-btn" onclick="openPopup('popup1')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/mission2mars.html" target="_blank">Mission 2 Mars (Space Sim)</a>
+            <button class="instruction-btn" onclick="openPopup('popup1')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="games/civilwar.html" target="_blank">Civil War (USA Map)</a>
-          <button class="instruction-btn" onclick="openPopup('popup2')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/civilwar.html" target="_blank">Civil War (USA Map)</a>
+            <button class="instruction-btn" onclick="openPopup('popup2')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="games/ww3.html" target="_blank">WW3 (World Map)</a>
-          <button class="instruction-btn" onclick="openPopup('popup3')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/ww3.html" target="_blank">WW3 (World Map)</a>
+            <button class="instruction-btn" onclick="openPopup('popup3')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="games/ww3hard.html" target="_blank">WW3 Hard Mode</a>
-          <button class="instruction-btn" onclick="openPopup('popup4')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/ww3hard.html" target="_blank">WW3 Hard Mode</a>
+            <button class="instruction-btn" onclick="openPopup('popup4')">Instructions</button>
+          </div>
         </li>
         <li>
-          <img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot">
-          <a class="link-text" href="games/warships.html" target="_blank">Warships (World Map)</a>
-          <button class="instruction-btn" onclick="openPopup('popup5')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/warships.html" target="_blank">Warships (World Map)</a>
+            <button class="instruction-btn" onclick="openPopup('popup5')">Instructions</button>
+          </div>
         </li>
         <li>
-          <img class="list-img" src="images/warshipscreenshot.png" alt="Warships Screenshot">
-          <a class="link-text" href="games/warshipshard.html" target="_blank">Warships Hard Mode</a>
-          <button class="instruction-btn" onclick="openPopup('popup6')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/warshipshard.html" target="_blank">Warships Hard Mode</a>
+            <button class="instruction-btn" onclick="openPopup('popup6')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="games/cram.html" target="_blank">C-Ram Sim (C-Ram Anti-Aircraft Gun)</a>
-          <button class="instruction-btn" onclick="openPopup('popup7')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Game Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="games/cram.html" target="_blank">C-Ram Sim (C-Ram Anti-Aircraft Gun)</a>
+            <button class="instruction-btn" onclick="openPopup('popup7')">Instructions</button>
+          </div>
         </li>
       </ul>
     </section>
@@ -248,24 +274,32 @@
       <h2>Programs</h2>
       <ul>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="programs/operations.html" target="_blank">Operations Overview (Task Manager)</a>
-          <button class="instruction-btn" onclick="openPopup('popup8')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Program Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="programs/operations.html" target="_blank">Operations Overview (Task Manager)</a>
+            <button class="instruction-btn" onclick="openPopup('popup8')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="programs/chatbot.html" target="_blank">Chat Bot</a>
-          <button class="instruction-btn" onclick="openPopup('popup9')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Program Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="programs/chatbot.html" target="_blank">Chat Bot</a>
+            <button class="instruction-btn" onclick="openPopup('popup9')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="programs/webcam.html" target="_blank">Webcam Video Maker (Record / Download)</a>
-          <button class="instruction-btn" onclick="openPopup('popup10')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Program Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="programs/webcam.html" target="_blank">Webcam Video Maker (Record / Download)</a>
+            <button class="instruction-btn" onclick="openPopup('popup10')">Instructions</button>
+          </div>
         </li>
         <li>
-          <div class="img-placeholder"></div>
-          <a class="link-text" href="programs/motion.html" target="_blank">Security Webcam (Motion Detect / Auto Record)</a>
-          <button class="instruction-btn" onclick="openPopup('popup11')">Instructions</button>
+          <img class="list-img" src="images/warshipscreenshot.png" alt="Program Screenshot">
+          <div class="link-container">
+            <a class="link-text" href="programs/motion.html" target="_blank">Security Webcam (Motion Detect / Auto Record)</a>
+            <button class="instruction-btn" onclick="openPopup('popup11')">Instructions</button>
+          </div>
         </li>
       </ul>
     </section>
